@@ -1198,6 +1198,16 @@ No write permission or file is read-only.</source>
         <source>You must restart qView to change the language.</source>
         <translation>你必須重啟qView以改變語言。</translation>
     </message>
+    <message>
+        <location filename="../src/qvoptionsdialog.ui" line="348"/>
+        <source>Hide the window titlebar and border. Use %1 + drag to move the window</source>
+        <translation>隱藏視窗標題列與邊框。使用 %1 + 拖曳移動視窗</translation>
+    </message>
+    <message>
+        <location filename="../src/qvoptionsdialog.ui" line="351"/>
+        <source>Frameless window</source>
+        <translation>無邊框視窗</translation>
+    </message>
 </context>
 <context>
     <name>QVRenameDialog</name>
