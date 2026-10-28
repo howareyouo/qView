@@ -47,12 +47,14 @@ QVGraphicsView::QVGraphicsView(QWidget *parent) : QGraphicsView(parent)
     windowMoveStarted = false;
 
     zoomBasisScaleFactor = 1.0;
+    fitBasisPixmapSize = QSize();
 
     connect(&imageCore, &QVImageCore::animatedFrameChanged, this,
             &QVGraphicsView::animatedFrameChanged);
     connect(&imageCore, &QVImageCore::fileChanged, this, &QVGraphicsView::postLoad);
     connect(&imageCore, &QVImageCore::updateLoadedPixmapItem, this,
             &QVGraphicsView::updateLoadedPixmapItem);
+    connect(&imageCore, &QVImageCore::fullPixmapLoaded, this, &QVGraphicsView::fullPixmapLoaded);
 
     // Should replace the other timer eventually
     expensiveScaleTimerNew = new QTimer(this);
@@ -731,6 +733,40 @@ void QVGraphicsView::updateLoadedPixmapItem()
     emit updatedLoadedPixmapItem();
 }
 
+void QVGraphicsView::fullPixmapLoaded()
+{
+    // Animations swap in their own frames; the upgrade decode only refreshed the cache
+    if (getCurrentFileDetails().isMovieLoaded)
+        return;
+
+    if (!getCurrentFileDetails().isPixmapLoaded || fitBasisPixmapSize.isEmpty())
+        return;
+
+    // At actual size the full pixmap is simply shown 1:1
+    if (isOriginalSize) {
+        loadedPixmapItem->setPixmap(getLoadedPixmap());
+        return;
+    }
+
+    const QSize fullSize = getCurrentFileDetails().loadedPixmapSize;
+    if (fullSize.isEmpty() || fullSize == fitBasisPixmapSize)
+        return;
+
+    // Rescale the absolute transform so the on-screen size does not jump when the
+    // preview pixmap is replaced by the full-resolution one
+    absoluteTransform = QTransform::fromScale(
+            absoluteTransform.m11() * fitBasisPixmapSize.width() / qreal(fullSize.width()),
+            absoluteTransform.m22() * fitBasisPixmapSize.height() / qreal(fullSize.height()));
+    fitBasisPixmapSize = fullSize;
+
+    if (qAbs(currentScale - 1.0) < 0.0001)
+        updateLoadedPixmapItem();
+    else if (qvGetSettingBool(SettingsManager::Setting::ScalingEnabled))
+        scaleExpensively();
+    // When scaling is disabled and the view is zoomed in, keep the current appearance;
+    // the next interaction picks up the full pixmap
+}
+
 void QVGraphicsView::resetScale()
 {
     if (!getCurrentFileDetails().isPixmapLoaded)
@@ -900,6 +936,9 @@ void QVGraphicsView::fitInViewMarginless(const QRectF &rect)
     const int adjWidth = width() - MARGIN;
     const int adjHeight = height() - MARGIN - obscuredHeight;
 
+    // Let the core know how large a preview decode needs to be for this viewport
+    imageCore.setFitTargetSize((QSizeF(adjWidth, adjHeight) * devicePixelRatioF()).toSize());
+
     QRectF viewRect;
     // Resize to window size unless you are meant to stop at the actual size, basically
     if (qvGetSettingBool(SettingsManager::Setting::PastActualSizeEnabled)
@@ -934,6 +973,10 @@ void QVGraphicsView::fitInViewMarginless(const QRectF &rect)
             qMin(viewRect.width() / sceneRect2.width(), viewRect.height() / sceneRect2.height());
 
     absoluteTransform = QTransform::fromScale(absoluteRatio, absoluteRatio);
+
+    // Remember which pixmap the absolute transform was computed from, so the
+    // full-resolution decode can be swapped in without changing the on-screen size
+    fitBasisPixmapSize = getCurrentFileDetails().loadedPixmapSize;
 
     // Scale and center on the center of \a rect.
     scale(xratio, yratio);

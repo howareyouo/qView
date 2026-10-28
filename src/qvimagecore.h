@@ -46,6 +46,10 @@ public:
         QElapsedTimer timeSinceLoaded;
         ErrorData errorData;
 
+        // Size of the full-resolution decode; differs from loadedPixmapSize only while
+        // a preview decode is on screen
+        QSize fullPixmapSize;
+
         void updateLoadedIndexInFolder();
     };
 
@@ -67,13 +71,19 @@ public:
         bool folderInfoScanned = false;
         FolderScanInfo folderScanInfo;
         int loadedIndexInFolder = -1;
+
+        // True when decoded at reduced size for a fast first display
+        bool isPreview = false;
+        // True when this is the full-resolution decode replacing a shown preview;
+        // never persisted in the cache
+        bool isFullUpgrade = false;
     };
 
     explicit QVImageCore(QObject *parent = nullptr);
 
     void loadFile(const QString &fileName, bool isReloading = false);
     ReadData readFile(const QString &fileName, const QColorSpace &targetColorSpace,
-                      const FolderScanParams &folderScanParams);
+                      const FolderScanParams &folderScanParams, QSize previewTargetSize = {});
     void loadPixmap(const ReadData &readData);
     void closeImage();
     QList<CompatibleFile> getCompatibleFiles(const QString &dirPath) const;
@@ -109,6 +119,9 @@ public:
     const FileDetails &getCurrentFileDetails() const { return currentFileDetails; }
     int getCurrentRotation() const { return currentRotation; }
 
+    // Sets the size in device pixels that preview decodes should target
+    void setFitTargetSize(const QSize &devicePixelSize) { fitTargetSize = devicePixelSize; }
+
 signals:
     void animatedFrameChanged(QRect rect);
 
@@ -116,12 +129,16 @@ signals:
 
     void fileChanged();
 
+    void fullPixmapLoaded();
+
 protected:
     void loadEmptyPixmap();
     FileDetails getEmptyFileDetails();
 
 private:
     FolderScanParams makeFolderScanParams(const QString &dirPath) const;
+
+    void startFullDecode(const QString &filePath, const QColorSpace &targetColorSpace);
 
     QPixmap loadedPixmap;
     QMovie loadedMovie;

@@ -632,7 +632,9 @@ void MainWindow::setWindowSize()
             qvApp->getSettingsManager().getInt(SettingsManager::Setting::MaxWindowResizedPercentage)
             / 100.0;
 
-    QSize imageSize = getCurrentFileDetails().loadedPixmapSize;
+    // Use the full-resolution size: while a preview decode is on screen the loaded
+    // pixmap is smaller than the actual image
+    QSize imageSize = getCurrentFileDetails().fullPixmapSize;
     imageSize -= QSize(4, 4);
 
 #ifdef Q_OS_WIN

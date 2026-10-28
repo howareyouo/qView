@@ -109,6 +109,8 @@ private slots:
 
     void updateLoadedPixmapItem();
 
+    void fullPixmapLoaded();
+
 private:
     void updateFilteringMode();
 
@@ -136,6 +138,10 @@ private:
     QTransform absoluteTransform;
     QTransform zoomBasis;
     qreal zoomBasisScaleFactor;
+
+    // Size the fit was computed against, so a preview upgrade can rescale the
+    // absolute transform to the full-resolution pixmap
+    QSize fitBasisPixmapSize;
 
     QVImageCore imageCore{ this };
 
