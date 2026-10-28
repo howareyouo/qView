@@ -8,6 +8,8 @@
 #include <QTimer>
 #include <QFileDialog>
 #include <QFontDatabase>
+#include <QMutex>
+#include <QtConcurrent/QtConcurrentRun>
 
 QVApplication::QVApplication(int &argc, char **argv) : QApplication(argc, argv)
 {
@@ -319,14 +321,40 @@ void QVApplication::hideIncompatibleActions()
 
 void QVApplication::defineFilterLists()
 {
+    // Building the lists takes long enough to be worth keeping off the startup path
+    filterListsFuture = QtConcurrent::run(&QVApplication::buildFilterLists);
+}
+
+void QVApplication::ensureFilterLists() const
+{
+    if (filterListsReady)
+        return;
+
+    static QMutex filterListsMutex;
+    QMutexLocker locker(&filterListsMutex);
+
+    if (filterListsReady)
+        return;
+
+    if (filterListsFuture.isStarted())
+        filterListsFuture.waitForFinished();
+
+    filterLists = filterListsFuture.result();
+    filterListsReady = true;
+}
+
+QVApplication::FilterLists QVApplication::buildFilterLists()
+{
+    FilterLists lists;
+
     const auto &byteArrayFormats = QImageReader::supportedImageFormats();
 
     auto filterString = tr("Supported Images") + " (";
-    fileExtensionList.reserve(byteArrayFormats.size() - 1);
+    lists.fileExtensionList.reserve(byteArrayFormats.size() - 1);
 
     const auto addExtension = [&](const QString &extension) {
         filterString += "*" + extension + " ";
-        fileExtensionList << extension;
+        lists.fileExtensionList << extension;
     };
 
     // Build the filterlist, filterstring, and filterregexplist in one loop
@@ -357,19 +385,21 @@ void QVApplication::defineFilterLists()
 
     // Build mime type list
     const auto &byteArrayMimeTypes = QImageReader::supportedMimeTypes();
-    mimeTypeNameList.reserve(byteArrayMimeTypes.size() - 1);
+    lists.mimeTypeNameList.reserve(byteArrayMimeTypes.size() - 1);
     for (const auto &byteArray : byteArrayMimeTypes) {
         // Qt 5.15 seems to have added pdf support for QImageReader but it is super broken in qView
         const QString mime = QString::fromUtf8(byteArray);
         if (mime == "application/pdf")
             continue;
 
-        mimeTypeNameList << mime;
+        lists.mimeTypeNameList << mime;
     }
 
     // Build name filter list for file dialogs
-    nameFilterList << filterString;
-    nameFilterList << tr("All Files") + " (*)";
+    lists.nameFilterList << filterString;
+    lists.nameFilterList << tr("All Files") + " (*)";
+
+    return lists;
 }
 
 void QVApplication::ensureFontLoaded(const QString &path)

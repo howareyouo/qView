@@ -11,6 +11,7 @@
 #include "qvwelcomedialog.h"
 
 #include <QApplication>
+#include <QFuture>
 #include <QRegularExpression>
 
 #if defined(qvApp)
@@ -69,15 +70,34 @@ public:
 
     void hideIncompatibleActions();
 
+    struct FilterLists
+    {
+        QStringList nameFilterList;
+        QStringList fileExtensionList;
+        QStringList mimeTypeNameList;
+    };
+
     void defineFilterLists();
 
     QMenuBar *getMenuBar() const { return menuBar; }
 
-    const QStringList &getNameFilterList() const { return nameFilterList; }
+    const QStringList &getNameFilterList() const
+    {
+        ensureFilterLists();
+        return filterLists.nameFilterList;
+    }
 
-    const QStringList &getFileExtensionList() const { return fileExtensionList; }
+    const QStringList &getFileExtensionList() const
+    {
+        ensureFilterLists();
+        return filterLists.fileExtensionList;
+    }
 
-    const QStringList &getMimeTypeNameList() const { return mimeTypeNameList; }
+    const QStringList &getMimeTypeNameList() const
+    {
+        ensureFilterLists();
+        return filterLists.mimeTypeNameList;
+    }
 
     SettingsManager &getSettingsManager() { return settingsManager; }
 
@@ -98,9 +118,15 @@ private:
 
     QMenuBar *menuBar;
 
-    QStringList nameFilterList;
-    QStringList fileExtensionList;
-    QStringList mimeTypeNameList;
+    static FilterLists buildFilterLists();
+
+    void ensureFilterLists() const;
+
+    mutable QFuture<FilterLists> filterListsFuture;
+
+    mutable FilterLists filterLists;
+
+    mutable bool filterListsReady = false;
 
     // This order is very important
     SettingsManager settingsManager;

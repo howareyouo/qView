@@ -48,6 +48,7 @@ MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent), ui(new Ui::MainWi
     // Initialize variables
     justLaunchedWithImage = false;
     storedWindowState = Qt::WindowNoState;
+    openWithNeedsPopulate = true;
 
     // Initialize graphicsviewkDefaultBufferAlignment
     graphicsView = new QVGraphicsView(this);
@@ -131,6 +132,13 @@ MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent), ui(new Ui::MainWi
     // Enable actions related to having a window
     disableActions();
 
+    // Only look up the Open With entries when a menu is opened, so the shell lookup doesn't
+    // compete with loading the image
+    const auto &openWithMenus = actionManager.getAllClonesOfMenu("openwith", this);
+    for (const auto &menu : openWithMenus) {
+        connect(menu, &QMenu::aboutToShow, this, &MainWindow::openWithMenuAboutToShow);
+    }
+
     // Connect functions to application components
     connect(&qvApp->getShortcutManager(), &ShortcutManager::shortcutsUpdated, this,
             &MainWindow::shortcutsUpdated);
@@ -139,10 +147,10 @@ MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent), ui(new Ui::MainWi
     settingsUpdated();
     shortcutsUpdated();
 
-    // Timer for delayed-load Open With menu
+    // Timer for delayed-load Open With menu, used as a fallback for programmatic population
     populateOpenWithTimer = new QTimer(this);
     populateOpenWithTimer->setSingleShot(true);
-    populateOpenWithTimer->setInterval(250);
+    populateOpenWithTimer->setInterval(1000);
     connect(populateOpenWithTimer, &QTimer::timeout, this,
             &MainWindow::requestPopulateOpenWithMenu);
 
@@ -392,6 +400,7 @@ void MainWindow::openRecent(int i)
 
 void MainWindow::fileChanged()
 {
+    openWithNeedsPopulate = true;
     populateOpenWithTimer->start();
     disableActions();
 
@@ -440,10 +449,24 @@ void MainWindow::disableActions()
 
 void MainWindow::requestPopulateOpenWithMenu()
 {
-    openWithFutureWatcher.setFuture(QtConcurrent::run([&] {
-        const auto &curFilePath = getCurrentFileDetails().fileInfo.absoluteFilePath();
-        return OpenWith::getOpenWithItems(curFilePath);
-    }));
+    // A search is already in flight, and it will populate the menu once it finishes
+    if (openWithFutureWatcher.isRunning())
+        return;
+
+    // Read the path here so that the worker doesn't have to touch window state
+    const QString currentFilePath = getCurrentFileDetails().fileInfo.absoluteFilePath();
+    openWithFutureWatcher.setFuture(QtConcurrent::run(
+            [currentFilePath] { return OpenWith::getOpenWithItems(currentFilePath); }));
+}
+
+void MainWindow::openWithMenuAboutToShow()
+{
+    if (!openWithNeedsPopulate)
+        return;
+
+    populateOpenWithTimer->stop();
+    openWithNeedsPopulate = false;
+    requestPopulateOpenWithMenu();
 }
 
 void MainWindow::populateOpenWithMenu(const QList<OpenWith::OpenWithItem> openWithItems)

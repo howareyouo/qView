@@ -1,4 +1,4 @@
-﻿#ifndef QVIMAGECORE_H
+#ifndef QVIMAGECORE_H
 #define QVIMAGECORE_H
 
 #include <QObject>
@@ -71,6 +71,26 @@ public:
         }
     };
 
+    struct FolderScanParams
+    {
+        // The folder only needs to be scanned if the file isn't in the listing we already have
+        bool scanFolder = false;
+        QString dirPath;
+        int sortMode = 0;
+        bool sortDescending = false;
+        bool skipHidden = false;
+        bool allowMimeContentDetection = false;
+        DirInfo lastDirInfo;
+        unsigned randomSortSeed = 0;
+    };
+
+    struct FolderScanInfo
+    {
+        QList<CompatibleFile> fileList;
+        DirInfo dirInfo;
+        unsigned randomSortSeed = 0;
+    };
+
     struct ReadData
     {
         QImage image;
@@ -79,17 +99,23 @@ public:
         QSize imageSize;
         QColorSpace targetColorSpace;
         ErrorData errorData;
+
+        // Only filled in when the file was read along with a scan of its folder
+        bool folderInfoScanned = false;
+        FolderScanInfo folderScanInfo;
+        int loadedIndexInFolder = -1;
     };
 
     explicit QVImageCore(QObject *parent = nullptr);
 
     void loadFile(const QString &fileName, bool isReloading = false);
-    ReadData readFile(const QString &fileName, const QColorSpace &targetColorSpace);
+    ReadData readFile(const QString &fileName, const QColorSpace &targetColorSpace,
+                      const FolderScanParams &folderScanParams = {});
     void loadPixmap(const ReadData &readData);
     void closeImage();
     QList<CompatibleFile> getCompatibleFiles(const QString &dirPath) const;
     void updateFolderInfo(QString dirPath = QString());
-    void requestCaching();
+    void requestCaching(const QColorSpace &targetColorSpace);
     void requestCachingFile(const QString &filePath, const QColorSpace &targetColorSpace);
     void addToCache(const ReadData &&readImageAndFileInfo);
     static QString getPixmapCacheKey(const QString &absoluteFilePath, const qint64 &fileSize,
@@ -131,6 +157,15 @@ protected:
     FileDetails getEmptyFileDetails();
 
 private:
+    static QList<CompatibleFile> getCompatibleFilesForDir(const QString &dirPath, int sortMode,
+                                                          bool skipHidden,
+                                                          bool allowMimeContentDetection);
+
+    FolderScanParams makeFolderScanParams(const QString &dirPath) const;
+    static FolderScanInfo scanFolder(const FolderScanParams &params);
+    static int findLoadedIndexInFolder(const QFileInfo &fileInfo,
+                                       const QList<CompatibleFile> &fileList);
+
     QPixmap loadedPixmap;
     QMovie loadedMovie;
 

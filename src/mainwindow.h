@@ -33,6 +33,8 @@ public:
 
     void populateOpenWithMenu(const QList<OpenWith::OpenWithItem> openWithItems);
 
+    void openWithMenuAboutToShow();
+
     void refreshProperties();
 
     void updateWindowTitle();
@@ -183,6 +185,8 @@ private:
 
     QTimer *populateOpenWithTimer;
     QFutureWatcher<QList<OpenWith::OpenWithItem>> openWithFutureWatcher;
+
+    bool openWithNeedsPopulate;
 };
 
 #endif // MAINWINDOW_H

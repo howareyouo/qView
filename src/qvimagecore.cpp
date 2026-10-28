@@ -85,6 +85,12 @@ void QVImageCore::loadFile(const QString &fileName, bool isReloading)
     currentFileDetails.isLoadRequested = true;
     waitingOnLoad = true;
 
+    // Scan the folder in the same worker task as the decoding, unless the listing we already have
+    // contains this file
+    FolderScanParams folderScanParams;
+    if (findLoadedIndexInFolder(fileInfo, currentFileDetails.folderFileInfoList) == -1)
+        folderScanParams = makeFolderScanParams(fileInfo.path());
+
     QColorSpace targetColorSpace = getTargetColorSpace();
     QString cacheKey = getPixmapCacheKey(sanitaryFileName, fileInfo.size(), targetColorSpace);
 
@@ -101,16 +107,19 @@ void QVImageCore::loadFile(const QString &fileName, bool isReloading)
     } else {
 #if QT_VERSION < QT_VERSION_CHECK(6, 0, 0)
         loadFutureWatcher.setFuture(QtConcurrent::run(this, &QVImageCore::readFile,
-                                                      sanitaryFileName, targetColorSpace));
+                                                      sanitaryFileName, targetColorSpace,
+                                                      folderScanParams));
 #else
         loadFutureWatcher.setFuture(QtConcurrent::run(&QVImageCore::readFile, this,
-                                                      sanitaryFileName, targetColorSpace));
+                                                      sanitaryFileName, targetColorSpace,
+                                                      folderScanParams));
 #endif
     }
 }
 
 QVImageCore::ReadData QVImageCore::readFile(const QString &fileName,
-                                            const QColorSpace &targetColorSpace)
+                                            const QColorSpace &targetColorSpace,
+                                            const FolderScanParams &folderScanParams)
 {
     QImageReader imageReader;
     imageReader.setAutoTransform(true);
@@ -166,6 +175,14 @@ QVImageCore::ReadData QVImageCore::readFile(const QString &fileName,
         readData.errorData = { true, imageReader.error(), imageReader.errorString() };
     }
 
+    // Scan the folder while the file is loaded instead of in a separate blocking step
+    if (folderScanParams.scanFolder) {
+        readData.folderInfoScanned = true;
+        readData.folderScanInfo = scanFolder(folderScanParams);
+        readData.loadedIndexInFolder =
+                findLoadedIndexInFolder(fileInfo, readData.folderScanInfo.fileList);
+    }
+
     return readData;
 }
 
@@ -180,9 +197,17 @@ void QVImageCore::loadPixmap(const ReadData &readData)
 
     // Do this first so we can keep folder info even when loading errored files
     currentFileDetails.fileInfo = QFileInfo(readData.absoluteFilePath);
-    currentFileDetails.updateLoadedIndexInFolder();
-    if (currentFileDetails.loadedIndexInFolder == -1)
-        updateFolderInfo();
+    if (readData.folderInfoScanned) {
+        // The folder listing was built in the same task as the file, so adopt it as-is
+        currentFileDetails.folderFileInfoList = readData.folderScanInfo.fileList;
+        currentFileDetails.loadedIndexInFolder = readData.loadedIndexInFolder;
+        lastDirInfo = readData.folderScanInfo.dirInfo;
+        randomSortSeed = readData.folderScanInfo.randomSortSeed;
+    } else {
+        currentFileDetails.updateLoadedIndexInFolder();
+        if (currentFileDetails.loadedIndexInFolder == -1)
+            updateFolderInfo();
+    }
 
     // Reset mechanism to avoid stalling while loading
     waitingOnLoad = false;
@@ -231,7 +256,7 @@ void QVImageCore::loadPixmap(const ReadData &readData)
 
     emit fileChanged();
 
-    requestCaching();
+    requestCaching(readData.targetColorSpace);
 }
 
 void QVImageCore::closeImage()
@@ -266,22 +291,27 @@ QVImageCore::FileDetails QVImageCore::getEmptyFileDetails()
 // All file logic, sorting, etc should be moved to a different class or file
 QList<QVImageCore::CompatibleFile> QVImageCore::getCompatibleFiles(const QString &dirPath) const
 {
-    int sortMode = qvGetSettingInt(SortMode);
+    return getCompatibleFilesForDir(dirPath, qvGetSettingInt(SortMode),
+                                    !qvApp->getSettingsManager().getBool("skiphidden"),
+                                    qvGetSettingBool(AllowMimeContentDetection));
+}
+
+QList<QVImageCore::CompatibleFile>
+QVImageCore::getCompatibleFilesForDir(const QString &dirPath, int sortMode, bool skipHidden,
+                                      bool allowMimeContentDetection)
+{
     QList<CompatibleFile> fileList;
 
     QMimeDatabase mimeDb;
     const auto &extensions = qvApp->getFileExtensionList();
     const auto &mimeTypes = qvApp->getMimeTypeNameList();
 
-    QMimeDatabase::MatchMode mimeMatchMode = qvGetSettingBool(AllowMimeContentDetection)
-            ? QMimeDatabase::MatchDefault
-            : QMimeDatabase::MatchExtension;
+    QMimeDatabase::MatchMode mimeMatchMode =
+            allowMimeContentDetection ? QMimeDatabase::MatchDefault : QMimeDatabase::MatchExtension;
 
     // skip hidden files if user wants to
     QDir::Filters filters = QDir::Files;
-
-    auto &settingsManager = qvApp->getSettingsManager();
-    if (!settingsManager.getBool("skiphidden"))
+    if (!skipHidden)
         filters |= QDir::Hidden;
 
     const QFileInfoList currentFolder = QDir(dirPath).entryInfoList(filters, QDir::Unsorted);
@@ -332,26 +362,56 @@ void QVImageCore::updateFolderInfo(QString dirPath)
             return;
     }
 
-    currentFileDetails.folderFileInfoList = getCompatibleFiles(dirPath);
+    const FolderScanInfo scanInfo = scanFolder(makeFolderScanParams(dirPath));
 
-    DirInfo dirInfo = { dirPath, currentFileDetails.folderFileInfoList.count(),
-                        qvGetSettingInt(SortMode), qvGetSettingBool(SortDescending) };
+    currentFileDetails.folderFileInfoList = scanInfo.fileList;
+    lastDirInfo = scanInfo.dirInfo;
+    randomSortSeed = scanInfo.randomSortSeed;
+
+    // Set current file index variable
+    currentFileDetails.updateLoadedIndexInFolder();
+}
+
+QVImageCore::FolderScanParams QVImageCore::makeFolderScanParams(const QString &dirPath) const
+{
+    FolderScanParams params;
+    params.scanFolder = true;
+    params.dirPath = dirPath;
+    params.sortMode = qvGetSettingInt(SortMode);
+    params.sortDescending = qvGetSettingBool(SortDescending);
+    params.skipHidden = qvApp->getSettingsManager().getBool("skiphidden");
+    params.allowMimeContentDetection = qvGetSettingBool(AllowMimeContentDetection);
+    params.lastDirInfo = lastDirInfo;
+    params.randomSortSeed = randomSortSeed;
+    return params;
+}
+
+QVImageCore::FolderScanInfo QVImageCore::scanFolder(const FolderScanParams &params)
+{
+    FolderScanInfo scanInfo;
+
+    scanInfo.fileList = getCompatibleFilesForDir(params.dirPath, params.sortMode, params.skipHidden,
+                                                 params.allowMimeContentDetection);
+
+    scanInfo.dirInfo = { params.dirPath, scanInfo.fileList.count(), params.sortMode,
+                         params.sortDescending };
     // If the current folder changed since the last image, assign a new seed for random sorting
-    if (lastDirInfo != dirInfo)
-        randomSortSeed = std::chrono::system_clock::now().time_since_epoch().count();
-    lastDirInfo = dirInfo;
+    if (params.lastDirInfo != scanInfo.dirInfo)
+        scanInfo.randomSortSeed = std::chrono::system_clock::now().time_since_epoch().count();
+    else
+        scanInfo.randomSortSeed = params.randomSortSeed;
 
+    auto &fileList = scanInfo.fileList;
     const auto sortFn = [&]() {
         // Sorting
-        switch (dirInfo.sortMode) {
+        switch (params.sortMode) {
         case 0: {
             // Natural sorting
             QCollator collator;
             collator.setNumericMode(true);
-            std::sort(currentFileDetails.folderFileInfoList.begin(),
-                      currentFileDetails.folderFileInfoList.end(),
+            std::sort(fileList.begin(), fileList.end(),
                       [&](const CompatibleFile &file1, const CompatibleFile &file2) {
-                          if (dirInfo.sortDescending)
+                          if (params.sortDescending)
                               return collator.compare(file1.fileName, file2.fileName) > 0;
                           else
                               return collator.compare(file1.fileName, file2.fileName) < 0;
@@ -360,10 +420,9 @@ void QVImageCore::updateFolderInfo(QString dirPath)
         }
         case 1:
             // Date modified
-            std::sort(currentFileDetails.folderFileInfoList.begin(),
-                      currentFileDetails.folderFileInfoList.end(),
+            std::sort(fileList.begin(), fileList.end(),
                       [&](const CompatibleFile &file1, const CompatibleFile &file2) {
-                          if (dirInfo.sortDescending)
+                          if (params.sortDescending)
                               return file1.lastModified < file2.lastModified;
                           else
                               return file1.lastModified > file2.lastModified;
@@ -371,10 +430,9 @@ void QVImageCore::updateFolderInfo(QString dirPath)
             break;
         case 2:
             // Date created
-            std::sort(currentFileDetails.folderFileInfoList.begin(),
-                      currentFileDetails.folderFileInfoList.end(),
+            std::sort(fileList.begin(), fileList.end(),
                       [&](const CompatibleFile &file1, const CompatibleFile &file2) {
-                          if (dirInfo.sortDescending)
+                          if (params.sortDescending)
                               return file1.lastCreated < file2.lastCreated;
                           else
                               return file1.lastCreated > file2.lastCreated;
@@ -382,10 +440,9 @@ void QVImageCore::updateFolderInfo(QString dirPath)
             break;
         case 3:
             // Size
-            std::sort(currentFileDetails.folderFileInfoList.begin(),
-                      currentFileDetails.folderFileInfoList.end(),
+            std::sort(fileList.begin(), fileList.end(),
                       [&](const CompatibleFile &file1, const CompatibleFile &file2) {
-                          if (dirInfo.sortDescending)
+                          if (params.sortDescending)
                               return file1.size < file2.size;
                           else
                               return file1.size > file2.size;
@@ -394,10 +451,9 @@ void QVImageCore::updateFolderInfo(QString dirPath)
         case 4: {
             // Type
             QCollator collator;
-            std::sort(currentFileDetails.folderFileInfoList.begin(),
-                      currentFileDetails.folderFileInfoList.end(),
+            std::sort(fileList.begin(), fileList.end(),
                       [&](const CompatibleFile &file1, const CompatibleFile &file2) {
-                          if (dirInfo.sortDescending)
+                          if (params.sortDescending)
                               return collator.compare(file1.mimeType, file2.mimeType) > 0;
                           else
                               return collator.compare(file1.mimeType, file2.mimeType) < 0;
@@ -406,9 +462,8 @@ void QVImageCore::updateFolderInfo(QString dirPath)
         }
         case 5:
             // Random
-            std::shuffle(currentFileDetails.folderFileInfoList.begin(),
-                         currentFileDetails.folderFileInfoList.end(),
-                         std::default_random_engine(randomSortSeed));
+            std::shuffle(fileList.begin(), fileList.end(),
+                         std::default_random_engine(scanInfo.randomSortSeed));
             break;
         default:
             Q_ASSERT(false);
@@ -418,19 +473,16 @@ void QVImageCore::updateFolderInfo(QString dirPath)
 
     sortFn();
 
-    // Set current file index variable
-    currentFileDetails.updateLoadedIndexInFolder();
+    return scanInfo;
 }
 
-void QVImageCore::requestCaching()
+void QVImageCore::requestCaching(const QColorSpace &targetColorSpace)
 {
     int preloadingMode = qvGetSettingInt(PreloadingMode);
     if (preloadingMode == 0) {
         QVImageCore::imageCache.clear();
         return;
     }
-
-    QColorSpace targetColorSpace = getTargetColorSpace();
 
     int preloadingDistance = 1;
 
@@ -496,11 +548,11 @@ void QVImageCore::requestCachingFile(const QString &filePath, const QColorSpace 
             });
 
 #if QT_VERSION < QT_VERSION_CHECK(6, 0, 0)
-    cacheFutureWatcher->setFuture(
-            QtConcurrent::run(this, &QVImageCore::readFile, filePath, targetColorSpace));
+    cacheFutureWatcher->setFuture(QtConcurrent::run(this, &QVImageCore::readFile, filePath,
+                                                    targetColorSpace, FolderScanParams()));
 #else
-    cacheFutureWatcher->setFuture(
-            QtConcurrent::run(&QVImageCore::readFile, this, filePath, targetColorSpace));
+    cacheFutureWatcher->setFuture(QtConcurrent::run(&QVImageCore::readFile, this, filePath,
+                                                    targetColorSpace, FolderScanParams()));
 #endif
 }
 
@@ -515,7 +567,16 @@ void QVImageCore::addToCache(const ReadData &&readData)
             * readData.image.depth() / 8;
 
     qint64 pixmapMemoryKiB = qMax(pixmapMemoryBytes / 1024, 1LL);
-    QVImageCore::imageCache.insert(cacheKey, new ReadData(std::move(readData)), pixmapMemoryKiB);
+
+    // Don't keep the folder listing cached, it can be very large and is only needed once
+    ReadData cacheEntry;
+    cacheEntry.image = readData.image;
+    cacheEntry.absoluteFilePath = readData.absoluteFilePath;
+    cacheEntry.fileSize = readData.fileSize;
+    cacheEntry.imageSize = readData.imageSize;
+    cacheEntry.targetColorSpace = readData.targetColorSpace;
+    cacheEntry.errorData = readData.errorData;
+    QVImageCore::imageCache.insert(cacheKey, new ReadData(std::move(cacheEntry)), pixmapMemoryKiB);
 }
 
 QString QVImageCore::getPixmapCacheKey(const QString &absoluteFilePath, const qint64 &fileSize,
@@ -751,19 +812,24 @@ void QVImageCore::settingsUpdated()
         loadFile(currentFileDetails.fileInfo.absoluteFilePath());
 }
 
-void QVImageCore::FileDetails::updateLoadedIndexInFolder()
+int QVImageCore::findLoadedIndexInFolder(const QFileInfo &fileInfo,
+                                         const QList<CompatibleFile> &fileList)
 {
     const QString targetPath = fileInfo.absoluteFilePath().normalized(QString::NormalizationForm_D);
-    for (int i = 0; i < folderFileInfoList.length(); i++) {
+    for (int i = 0; i < fileList.length(); i++) {
         // Compare absoluteFilePath first because it's way faster, but double-check with
         // QFileInfo::operator== because it respects file system case sensitivity rules
         QString candidatePath =
-                folderFileInfoList[i].absoluteFilePath.normalized(QString::NormalizationForm_D);
+                fileList[i].absoluteFilePath.normalized(QString::NormalizationForm_D);
         if (candidatePath.compare(targetPath, Qt::CaseInsensitive) == 0
-            && QFileInfo(folderFileInfoList[i].absoluteFilePath) == fileInfo) {
-            loadedIndexInFolder = i;
-            return;
+            && QFileInfo(fileList[i].absoluteFilePath) == fileInfo) {
+            return i;
         }
     }
-    loadedIndexInFolder = -1;
+    return -1;
+}
+
+void QVImageCore::FileDetails::updateLoadedIndexInFolder()
+{
+    loadedIndexInFolder = findLoadedIndexInFolder(fileInfo, folderFileInfoList);
 }
