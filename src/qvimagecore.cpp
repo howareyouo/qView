@@ -580,16 +580,13 @@ void QVImageCore::rotateImage(int rotation)
     currentRotation = (currentRotation % 360 + 360) % 360;
     QTransform transform;
 
-    QImage transformedImage;
     if (currentFileDetails.isMovieLoaded) {
         transform.rotate(currentRotation);
-        transformedImage = loadedMovie.currentImage().transformed(transform);
+        loadedPixmap.convertFromImage(loadedMovie.currentImage().transformed(transform));
     } else {
         transform.rotate(rotation);
-        transformedImage = loadedPixmap.toImage().transformed(transform);
+        loadedPixmap = loadedPixmap.transformed(transform);
     }
-
-    loadedPixmap.convertFromImage(transformedImage);
 
     currentFileDetails.loadedPixmapSize = QSize(loadedPixmap.width(), loadedPixmap.height());
     emit updateLoadedPixmapItem();
@@ -611,7 +608,9 @@ QPixmap QVImageCore::matchCurrentRotation(const QPixmap &pixmapToRotate)
     if (!currentRotation)
         return pixmapToRotate;
 
-    return QPixmap::fromImage(matchCurrentRotation(pixmapToRotate.toImage()));
+    QTransform transform;
+    transform.rotate(currentRotation);
+    return pixmapToRotate.transformed(transform);
 }
 
 QPixmap QVImageCore::scaleExpensively(const int desiredWidth, const int desiredHeight)
@@ -643,7 +642,6 @@ QPixmap QVImageCore::scaleExpensively(const QSizeF desiredSize)
     }
 
     return relevantPixmap.scaled(size, Qt::KeepAspectRatio, Qt::SmoothTransformation);
-    ;
 }
 
 void QVImageCore::settingsUpdated()

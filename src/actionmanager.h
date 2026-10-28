@@ -15,7 +15,7 @@ public:
         QString fileName;
         QString filePath;
 
-        bool operator==(const SRecent other) const
+        bool operator==(const SRecent &other) const
         {
             return (fileName == other.fileName && filePath == other.filePath);
         }
