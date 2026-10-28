@@ -1,8 +1,6 @@
 #include "qvimagecore.h"
 #include "qvapplication.h"
-#include "qvwin32functions.h"
-#include "qvcocoafunctions.h"
-#include "qvlinuxx11functions.h"
+#include "qvplatformfunctions.h"
 #include <cstring>
 #include <QMessageBox>
 #include <QUrl>
@@ -492,16 +490,7 @@ QColorSpace QVImageCore::detectDisplayColorSpace() const
 #if QT_VERSION >= QT_VERSION_CHECK(5, 14, 0)
     QWindow *window = static_cast<QWidget *>(parent())->window()->windowHandle();
 
-    QByteArray profileData;
-#  ifdef WIN32_LOADED
-    profileData = QVWin32Functions::getIccProfileForWindow(window);
-#  endif
-#  ifdef COCOA_LOADED
-    profileData = QVCocoaFunctions::getIccProfileForWindow(window);
-#  endif
-#  ifdef X11_LOADED
-    profileData = QVLinuxX11Functions::getIccProfileForWindow(window);
-#  endif
+    QByteArray profileData = QVPlatformFunctions::getIccProfileForWindow(window);
 
     if (!profileData.isEmpty()) {
         QColorSpace colorSpace = QColorSpace::fromIccProfile(profileData);

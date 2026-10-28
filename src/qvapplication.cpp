@@ -1,6 +1,6 @@
 #include "qvapplication.h"
 #include "qvoptionsdialog.h"
-#include "qvcocoafunctions.h"
+#include "qvplatformfunctions.h"
 #include "updatechecker.h"
 
 #include <QFileOpenEvent>
@@ -61,9 +61,7 @@ QVApplication::QVApplication(int &argc, char **argv) : QApplication(argc, argv)
             [](QAction *triggeredAction) { ActionManager::actionTriggered(triggeredAction); });
 
     // Set mac-specific application settings
-#ifdef COCOA_LOADED
-    QVCocoaFunctions::setUserDefaults();
-#endif
+    QVPlatformFunctions::setUserDefaults();
 #ifdef Q_OS_MACOS
     setQuitOnLastWindowClosed(getSettingsManager().getBool(SettingsManager::Setting::QuitOnLastWindow));
 #endif
@@ -201,13 +199,11 @@ void QVApplication::checkedUpdates()
 
 void QVApplication::recentsMenuUpdated()
 {
-#ifdef COCOA_LOADED
     QStringList recentsPathList;
     for (const auto &recent : actionManager.getRecentsList()) {
         recentsPathList << recent.filePath;
     }
-    QVCocoaFunctions::setDockRecents(recentsPathList);
-#endif
+    QVPlatformFunctions::setDockRecents(recentsPathList);
 }
 
 void QVApplication::addToLastActiveWindows(MainWindow *window)

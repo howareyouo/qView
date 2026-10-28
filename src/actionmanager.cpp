@@ -2,6 +2,7 @@
 #include "mainwindow.h"
 #include "qvapplication.h"
 #include "qvcocoafunctions.h"
+#include "qvplatformfunctions.h"
 #include "openwith.h"
 
 #include <QSettings>
@@ -179,9 +180,7 @@ QMenuBar *ActionManager::buildMenuBar(QWidget *parent)
     addCloneOfAction(fileMenu, "closewindow");
     addCloneOfAction(fileMenu, "closeallwindows");
 #endif
-#ifdef COCOA_LOADED
-    QVCocoaFunctions::setAlternate(fileMenu, fileMenu->actions().length() - 1);
-#endif
+    QVPlatformFunctions::setAlternate(fileMenu, fileMenu->actions().length() - 1);
     fileMenu->addSeparator();
     fileMenu->addMenu(buildOpenWithMenu(fileMenu));
     addCloneOfAction(fileMenu, "opencontainingfolder");
@@ -203,9 +202,7 @@ QMenuBar *ActionManager::buildMenuBar(QWidget *parent)
     editMenu->addSeparator();
     addCloneOfAction(editMenu, "delete");
     addCloneOfAction(editMenu, "deletepermanent");
-#ifdef COCOA_LOADED
-    QVCocoaFunctions::setAlternate(editMenu, editMenu->actions().length() - 1);
-#endif
+    QVPlatformFunctions::setAlternate(editMenu, editMenu->actions().length() - 1);
 
     menuBar->addMenu(editMenu);
     // End of edit menu
@@ -549,9 +546,7 @@ void ActionManager::actionTriggered(QAction *triggeredAction, MainWindow *releva
           { false,
             [](MainWindow *, QAction *) {
                 auto *active = QApplication::activeWindow();
-#ifdef COCOA_LOADED
-                QVCocoaFunctions::closeWindow(active->windowHandle());
-#endif
+                QVPlatformFunctions::closeWindow(active->windowHandle());
                 active->close();
             } } },
         { "closeallwindows",
@@ -559,9 +554,7 @@ void ActionManager::actionTriggered(QAction *triggeredAction, MainWindow *releva
             [](MainWindow *, QAction *) {
                 const auto topLevelWindows = QApplication::topLevelWindows();
                 for (auto *window : topLevelWindows) {
-#ifdef COCOA_LOADED
-                    QVCocoaFunctions::closeWindow(window);
-#endif
+                    QVPlatformFunctions::closeWindow(window);
                     window->close();
                 }
             } } },

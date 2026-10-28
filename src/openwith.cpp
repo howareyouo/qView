@@ -1,6 +1,7 @@
-﻿#include "mainwindow.h"
+#include "mainwindow.h"
 #include "openwith.h"
 #include "qvcocoafunctions.h"
+#include "qvplatformfunctions.h"
 #include "qvwin32functions.h"
 #include "ui_qvopenwithdialog.h"
 
@@ -203,9 +204,8 @@ void OpenWith::openWith(const QString &filePath, const OpenWithItem &openWithIte
 
     // Windows-only native app launch method
     if (openWithItem.winAssocHandler) {
-#if defined Q_OS_WIN && WIN32_LOADED
-        QVWin32Functions::openWithInvokeAssocHandler(nativeFilePath, openWithItem.winAssocHandler);
-#endif
+        QVPlatformFunctions::openWithInvokeAssocHandler(nativeFilePath,
+                                                        openWithItem.winAssocHandler);
     } else {
         args.append(nativeFilePath);
         QProcess::startDetached(exec, args);

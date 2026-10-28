@@ -29,8 +29,6 @@ public:
     void undoDelete(MainWindow &window);
 
 private:
-    QString deleteFileLinuxFallback(const QString &path, bool putBack);
-
     QStack<DeletedPaths> lastDeletedFiles;
 };
 

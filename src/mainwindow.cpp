@@ -1,7 +1,7 @@
 #include "mainwindow.h"
 #include "ui_mainwindow.h"
 #include "qvapplication.h"
-#include "qvcocoafunctions.h"
+#include "qvplatformfunctions.h"
 #include "qvrenamedialog.h"
 #include "windowgeometry.h"
 
@@ -193,22 +193,18 @@ void MainWindow::contextMenuEvent(QContextMenuEvent *event)
     // The native cocoa menu does not update elements until the entire menu is reopened, so we
     // update first
     qvApp->getActionManager().loadRecentsList();
-    QVCocoaFunctions::showMenu(contextMenu, event->pos(), windowHandle());
-#else
-    contextMenu->popup(event->globalPos());
 #endif
+    QVPlatformFunctions::showContextMenu(contextMenu, event, windowHandle());
 }
 
 void MainWindow::showEvent(QShowEvent *event)
 {
-#ifdef COCOA_LOADED
     // Enable full size content view. With some Qt versions, this can break its restoreGeometry
     // functionality even if we enable this after. Presumably restoreGeometry saves data for
     // further processing after the window is shown, hence the timer here to queue this on the
     // event loop and run after that processing happens.
     QTimer::singleShot(
-            0, this, [this]() { QVCocoaFunctions::setFullSizeContentView(windowHandle(), true); });
-#endif
+            0, this, [this]() { QVPlatformFunctions::setFullSizeContentView(windowHandle(), true); });
 
     if (!menuBar()->sizeHint().isEmpty()) {
         ui->fullscreenLabel->setMargin(0);
@@ -220,11 +216,9 @@ void MainWindow::showEvent(QShowEvent *event)
 
 void MainWindow::closeEvent(QCloseEvent *event)
 {
-#ifdef COCOA_LOADED
     // Full size content view can confuse saveGeometry, making it think the window is taller than
     // it really is, so the restored window ends up taller. Turn it off before saving geometry.
-    QVCocoaFunctions::setFullSizeContentView(windowHandle(), false);
-#endif
+    QVPlatformFunctions::setFullSizeContentView(windowHandle(), false);
 
     QSettings settings;
     settings.setValue("geometry", saveGeometry());
@@ -382,11 +376,11 @@ void MainWindow::settingsUpdated()
         action->setChecked(frameless);
     }
 
-#ifdef COCOA_LOADED
     // titlebaralwaysdark/hidetitlebar
-    QVCocoaFunctions::setVibrancy(settingsManager.getBool(SettingsManager::Setting::HideTitlebar),
-                                  settingsManager.getBool(SettingsManager::Setting::ForceDarkMode),
-                                  windowHandle());
+    QVPlatformFunctions::setVibrancy(settingsManager.getBool(SettingsManager::Setting::HideTitlebar),
+                                     settingsManager.getBool(SettingsManager::Setting::ForceDarkMode),
+                                     windowHandle());
+#ifdef COCOA_LOADED
     // quitonlastwindow
     qvApp->setQuitOnLastWindowClosed(
             settingsManager.getBool(SettingsManager::Setting::QuitOnLastWindow));
@@ -895,10 +889,6 @@ void MainWindow::toggleFullScreen()
 
 int MainWindow::getTitlebarOverlap() const
 {
-#ifdef COCOA_LOADED
-    // To account for fullsizecontentview on mac
-    return QVCocoaFunctions::getObscuredHeight(window()->windowHandle());
-#endif
-
-    return 0;
+    // To account for fullsizecontentview on mac (returns 0 on other platforms)
+    return QVPlatformFunctions::getObscuredHeight(window()->windowHandle());
 }

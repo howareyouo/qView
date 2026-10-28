@@ -2,6 +2,7 @@
 #include "qvapplication.h"
 #include "qvinfodialog.h"
 #include "qvcocoafunctions.h"
+#include "qvplatformfunctions.h"
 #include "settingsmanager.h"
 #include <QRandomGenerator>
 #include <QWheelEvent>
@@ -117,17 +118,8 @@ void QVGraphicsView::enterEvent(QEnterEvent *event)
 
 void QVGraphicsView::mousePressEvent(QMouseEvent *event)
 {
-    const auto startWindowMove = [this, event]() {
-#ifdef COCOA_LOADED
-        return QVCocoaFunctions::startSystemMove(window());
-#else
-#  if QT_VERSION >= QT_VERSION_CHECK(5, 15, 0)
-        return window()->windowHandle()->startSystemMove();
-#  else
-        Q_UNUSED(event)
-        return false;
-#  endif
-#endif
+    const auto startWindowMove = [this]() {
+        return QVPlatformFunctions::startSystemMove(window());
     };
 
     const auto startFallbackWindowMove = [this, event]() {
@@ -873,11 +865,7 @@ void QVGraphicsView::goToFile(const GoToFileMode &mode, int index)
 
 void QVGraphicsView::fitInViewMarginless(const QRectF &rect)
 {
-#ifdef COCOA_LOADED
-    int obscuredHeight = QVCocoaFunctions::getObscuredHeight(window()->windowHandle());
-#else
-    int obscuredHeight = 0;
-#endif
+    int obscuredHeight = QVPlatformFunctions::getObscuredHeight(window()->windowHandle());
 
     // Set adjusted image size / bounding rect based on
     QSize adjustedImageSize = getCurrentFileDetails().loadedPixmapSize;
@@ -967,11 +955,7 @@ void QVGraphicsView::fitInViewMarginless(const QGraphicsItem *item)
 
 void QVGraphicsView::centerOn(const QPointF &pos)
 {
-#ifdef COCOA_LOADED
-    int obscuredHeight = QVCocoaFunctions::getObscuredHeight(window()->windowHandle());
-#else
-    int obscuredHeight = 0;
-#endif
+    int obscuredHeight = QVPlatformFunctions::getObscuredHeight(window()->windowHandle());
 
     qreal width = viewport()->width();
     qreal height = viewport()->height() - obscuredHeight;

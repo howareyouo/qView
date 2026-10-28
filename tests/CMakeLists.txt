@@ -9,6 +9,7 @@ set(TEST_SOURCES
     tst_actionmanagertests.cpp
     ../src/mainwindow.cpp
     ../src/fileoperations.cpp
+    ../src/qvplatformfunctions.cpp
     ../src/urlopener.cpp
     ../src/slideshowcontroller.cpp
     ../src/windowgeometry.cpp
