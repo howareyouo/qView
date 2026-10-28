@@ -46,6 +46,7 @@ protected:
     void updateButtonBox();
     void bgColorButtonClicked();
     void updateBgColorButton();
+    void setBgColorControlsEnabled(bool enabled);
     void populateCategories(int selectedRow);
     void populateLanguages();
 

@@ -160,15 +160,14 @@ void QVOptionsDialog::syncSettings(bool defaults, bool makeConnections)
 
     // bgcolorenabled
     syncCheckbox(ui->bgColorCheckbox, "bgcolorenabled", defaults, makeConnections);
-    if (ui->bgColorCheckbox->isChecked())
-        ui->bgColorButton->setEnabled(true);
-    else
-        ui->bgColorButton->setEnabled(false);
     // bgcolor
     ui->bgColorButton->setText(settingsManager.getString("bgcolor", defaults));
     transientSettings.insert("bgcolor", ui->bgColorButton->text());
     updateBgColorButton();
     connect(ui->bgColorButton, &QPushButton::clicked, this, &QVOptionsDialog::bgColorButtonClicked);
+    // bgcoloralpha
+    syncSpinBox(ui->bgColorAlphaSpinBox, "bgcoloralpha", defaults, makeConnections);
+    setBgColorControlsEnabled(ui->bgColorCheckbox->isChecked());
     // titlebarmode
     syncRadioButtons({ ui->titlebarRadioButton0, ui->titlebarRadioButton1, ui->titlebarRadioButton2,
                        ui->titlebarRadioButton3 },
@@ -462,12 +461,16 @@ void QVOptionsDialog::updateBgColorButton()
 
 void QVOptionsDialog::bgColorCheckboxStateChanged(int arg1)
 {
-    if (arg1 > 0)
-        ui->bgColorButton->setEnabled(true);
-    else
-        ui->bgColorButton->setEnabled(false);
+    setBgColorControlsEnabled(arg1 > 0);
 
     updateBgColorButton();
+}
+
+void QVOptionsDialog::setBgColorControlsEnabled(bool enabled)
+{
+    ui->bgColorButton->setEnabled(enabled);
+    ui->bgColorAlphaLabel->setEnabled(enabled);
+    ui->bgColorAlphaSpinBox->setEnabled(enabled);
 }
 
 void QVOptionsDialog::scalingCheckboxStateChanged(int arg1)

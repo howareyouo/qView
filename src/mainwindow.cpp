@@ -37,7 +37,12 @@ MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent), ui(new Ui::MainWi
 {
     ui->setupUi(this);
     setAttribute(Qt::WA_DeleteOnClose);
-    setAttribute(Qt::WA_OpaquePaintEvent);
+    // Create the window with a translucent surface so the background color's alpha shows the
+    // desktop through behind the image. An opaque background color, which is the default, paints
+    // over the whole surface and looks exactly like a regular opaque window.
+    // The attribute is only read when the native window is created, so it has to be set here
+    // instead of in settingsUpdated().
+    setAttribute(Qt::WA_TranslucentBackground);
 
 #if defined COCOA_LOADED && QT_VERSION >= QT_VERSION_CHECK(6, 8, 0)
     // Allow the titlebar to overlap widgets with full size content view
@@ -284,10 +289,21 @@ void MainWindow::paintEvent(QPaintEvent *event)
     // titlebar due to full size content view.
     const int unobscuredViewportY = qMax(getTitlebarOverlap(), viewportY);
 
-    // Erase the area above the viewport, i.e. fill it with the painter's default color.
+    // A translucent background color has to replace the pixels of the window's translucent surface
+    // instead of blending with whatever is already there, otherwise the desktop would not show
+    // through by the amount the color's alpha allows.
+    const bool translucentBackgroundColor = backgroundColor.alpha() < 255;
+    if (translucentBackgroundColor)
+        painter.setCompositionMode(QPainter::CompositionMode_Source);
+
+    // Erase the area above the viewport, i.e. fill it with the painter's default color. With a
+    // translucent background color, eraseRect() would paint an opaque color there instead.
     const QRect headerRect = QRect(0, 0, width(), viewportY);
     if (headerRect.isValid()) {
-        painter.eraseRect(headerRect);
+        if (translucentBackgroundColor)
+            painter.fillRect(headerRect, backgroundColor);
+        else
+            painter.eraseRect(headerRect);
     }
 
     // Fill the viewport with the background color.
@@ -295,6 +311,9 @@ void MainWindow::paintEvent(QPaintEvent *event)
     if (viewportRect.isValid()) {
         painter.fillRect(viewportRect, backgroundColor);
     }
+
+    if (translucentBackgroundColor)
+        painter.setCompositionMode(QPainter::CompositionMode_SourceOver);
 
     // If there's an error message, draw it centered inside the unobscured area of the viewport.
     const QRect unobscuredViewportRect = rect().adjusted(0, unobscuredViewportY, 0, 0);
@@ -344,6 +363,14 @@ void MainWindow::settingsUpdated()
     customBackgroundColor = settingsManager.getBool(SettingsManager::Setting::BgColorEnabled)
             ? QColor(settingsManager.getString(SettingsManager::Setting::BgColor))
             : QColor();
+
+    // Store the background color opacity (0-100%) in the color's alpha channel. The window is
+    // already created translucent, so repainting is all it takes for the change to take effect.
+    if (customBackgroundColor.isValid()) {
+        const int bgColorAlpha =
+                qBound(0, settingsManager.getInt(SettingsManager::Setting::BgColorAlpha), 100);
+        customBackgroundColor.setAlpha(qRound(bgColorAlpha * 255.0 / 100.0));
+    }
 
     // menubarenabled
     bool menuBarEnabled = settingsManager.getBool(SettingsManager::Setting::MenuBarEnabled);

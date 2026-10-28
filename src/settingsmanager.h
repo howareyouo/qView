@@ -18,6 +18,7 @@ public:
         // Window settings
         BgColorEnabled = 0,
         BgColor,
+        BgColorAlpha,
         TitleBarMode,
         WindowResizeMode,
         MinWindowResizedPercentage,
