@@ -1,4 +1,5 @@
 #include "actionmanager.h"
+#include "mainwindow.h"
 #include "qvapplication.h"
 #include "qvcocoafunctions.h"
 #include "openwith.h"
@@ -6,6 +7,8 @@
 #include <QSettings>
 #include <QMimeDatabase>
 #include <QFileIconProvider>
+
+#include <functional>
 
 ActionManager::ActionManager(QObject *parent) : QObject(parent)
 {
@@ -496,25 +499,22 @@ QMenu *ActionManager::buildOpenWithMenu(QWidget *parent)
 
 void ActionManager::actionTriggered(QAction *triggeredAction)
 {
-    auto key = triggeredAction->data().toStringList().first();
+    const auto key = triggeredAction->data().toStringList().first();
 
     // For some actions, do not look for a relevant window
     QStringList windowlessActions = { "newwindow", "quit", "clearrecents", "open" };
 #ifdef Q_OS_MACOS
     windowlessActions << "about" << "welcome" << "options";
 #endif
-    for (const auto &actionName : qAsConst(windowlessActions)) {
-        if (key == actionName) {
-            actionTriggered(triggeredAction, nullptr);
-            return;
-        }
+
+    if (windowlessActions.contains(key)) {
+        actionTriggered(triggeredAction, nullptr);
+        return;
     }
 
     // If some actions are triggered without an explicit window, we want
     // to give them a window without an image open
-    bool shouldBeEmpty = false;
-    if (key.startsWith("recent") || key == "openurl")
-        shouldBeEmpty = true;
+    const bool shouldBeEmpty = key.startsWith("recent") || key == "openurl";
 
     if (auto *window = qvApp->getMainWindow(shouldBeEmpty))
         actionTriggered(triggeredAction, window);
@@ -522,368 +522,476 @@ void ActionManager::actionTriggered(QAction *triggeredAction)
 
 void ActionManager::actionTriggered(QAction *triggeredAction, MainWindow *relevantWindow)
 {
-    // Conditions that will work with a nullptr window passed
-    auto key = triggeredAction->data().toStringList().first();
+    struct ActionHandler
+    {
+        bool requiresWindow;
+        std::function<void(MainWindow *window, QAction *triggeredAction)> run;
+    };
 
-    if (key == "quit") {
+    static const QHash<QString, ActionHandler> handlers = {
+        // Conditions that will work with a nullptr window passed
+        { "quit",
+          { false,
+            [](MainWindow *, QAction *) {
 #if QT_VERSION < QT_VERSION_CHECK(6, 0, 0)
-        // Workaround to allow for a graceful exit (e.g. fire window close events)
-        // since QCoreApplication::quit can't accomplish this prior to Qt 6
-        qGuiApp->postEvent(qGuiApp, new QEvent(QEvent::Quit));
+                // Workaround to allow for a graceful exit (e.g. fire window close events)
+                // since QCoreApplication::quit can't accomplish this prior to Qt 6
+                qGuiApp->postEvent(qGuiApp, new QEvent(QEvent::Quit));
 #else
-        QCoreApplication::quit();
+                QCoreApplication::quit();
 #endif
-    } else if (key == "newwindow") {
-        qvApp->newWindow();
-    } else if (key == "open") {
-        qvApp->pickFile(relevantWindow);
-    } else if (key == "open") {
-        qvApp->pickFile(relevantWindow);
-    } else if (key == "closewindow") {
-        auto *active = QApplication::activeWindow();
+            } } },
+        { "newwindow",
+          { false, [](MainWindow *, QAction *) { qvApp->newWindow(); } } },
+        { "open",
+          { false, [](MainWindow *window, QAction *) { qvApp->pickFile(window); } } },
+        { "closewindow",
+          { false,
+            [](MainWindow *, QAction *) {
+                auto *active = QApplication::activeWindow();
 #ifdef COCOA_LOADED
-        QVCocoaFunctions::closeWindow(active->windowHandle());
+                QVCocoaFunctions::closeWindow(active->windowHandle());
 #endif
-        active->close();
-    } else if (key == "closeallwindows") {
-        const auto topLevelWindows = QApplication::topLevelWindows();
-        for (auto *window : topLevelWindows) {
+                active->close();
+            } } },
+        { "closeallwindows",
+          { false,
+            [](MainWindow *, QAction *) {
+                const auto topLevelWindows = QApplication::topLevelWindows();
+                for (auto *window : topLevelWindows) {
 #ifdef COCOA_LOADED
-            QVCocoaFunctions::closeWindow(window);
+                    QVCocoaFunctions::closeWindow(window);
 #endif
-            window->close();
-        }
-    } else if (key == "options") {
-        qvApp->openOptionsDialog(relevantWindow);
-    } else if (key == "about") {
-        qvApp->openAboutDialog(relevantWindow);
-    } else if (key == "welcome") {
-        qvApp->openWelcomeDialog(relevantWindow);
-    } else if (key == "clearrecents") {
-        qvApp->getActionManager().clearRecentsList();
-    } else if (key == "frameless") {
+                    window->close();
+                }
+            } } },
+        { "options",
+          { false, [](MainWindow *window, QAction *) { qvApp->openOptionsDialog(window); } } },
+        { "about",
+          { false, [](MainWindow *window, QAction *) { qvApp->openAboutDialog(window); } } },
+        { "welcome",
+          { false, [](MainWindow *window, QAction *) { qvApp->openWelcomeDialog(window); } } },
+        { "clearrecents",
+          { false,
+            [](MainWindow *, QAction *) { qvApp->getActionManager().clearRecentsList(); } } },
         // The frameless setting is global, so there is no need for a relevant window here
-        qvApp->getSettingsManager().setSetting("frameless", triggeredAction->isChecked());
+        { "frameless",
+          { false,
+            [](MainWindow *, QAction *triggeredAction) {
+                qvApp->getSettingsManager().setSetting("frameless", triggeredAction->isChecked());
+            } } },
+
+        // Conditions that require a valid window pointer
+        { "openurl",
+          { true, [](MainWindow *window, QAction *) { window->pickUrl(); } } },
+        { "reloadfile",
+          { true, [](MainWindow *window, QAction *) { window->reloadFile(); } } },
+        { "opencontainingfolder",
+          { true, [](MainWindow *window, QAction *) { window->openContainingFolder(); } } },
+        { "showfileinfo",
+          { true, [](MainWindow *window, QAction *) { window->showFileInfo(); } } },
+        { "delete",
+          { true, [](MainWindow *window, QAction *) { window->askDeleteFile(false); } } },
+        { "deletepermanent",
+          { true, [](MainWindow *window, QAction *) { window->askDeleteFile(true); } } },
+        { "undo",
+          { true, [](MainWindow *window, QAction *) { window->undoDelete(); } } },
+        { "copy",
+          { true, [](MainWindow *window, QAction *) { window->copy(); } } },
+        { "paste",
+          { true, [](MainWindow *window, QAction *) { window->paste(); } } },
+        { "rename",
+          { true, [](MainWindow *window, QAction *) { window->rename(); } } },
+        { "zoomin",
+          { true, [](MainWindow *window, QAction *) { window->zoomIn(); } } },
+        { "zoomout",
+          { true, [](MainWindow *window, QAction *) { window->zoomOut(); } } },
+        { "resetzoom",
+          { true, [](MainWindow *window, QAction *) { window->resetZoom(); } } },
+        { "originalsize",
+          { true, [](MainWindow *window, QAction *) { window->originalSize(); } } },
+        { "rotateright",
+          { true, [](MainWindow *window, QAction *) { window->rotateRight(); } } },
+        { "rotateleft",
+          { true, [](MainWindow *window, QAction *) { window->rotateLeft(); } } },
+        { "mirror",
+          { true, [](MainWindow *window, QAction *) { window->mirror(); } } },
+        { "flip",
+          { true, [](MainWindow *window, QAction *) { window->flip(); } } },
+        { "fullscreen",
+          { true, [](MainWindow *window, QAction *) { window->toggleFullScreen(); } } },
+        { "firstfile",
+          { true, [](MainWindow *window, QAction *) { window->firstFile(); } } },
+        { "previousfile",
+          { true, [](MainWindow *window, QAction *) { window->previousFile(); } } },
+        { "nextfile",
+          { true, [](MainWindow *window, QAction *) { window->nextFile(); } } },
+        { "lastfile",
+          { true, [](MainWindow *window, QAction *) { window->lastFile(); } } },
+        { "randomfile",
+          { true, [](MainWindow *window, QAction *) { window->randomFile(); } } },
+        { "saveframeas",
+          { true, [](MainWindow *window, QAction *) { window->saveFrameAs(); } } },
+        { "pause",
+          { true, [](MainWindow *window, QAction *) { window->pause(); } } },
+        { "nextframe",
+          { true, [](MainWindow *window, QAction *) { window->nextFrame(); } } },
+        { "decreasespeed",
+          { true, [](MainWindow *window, QAction *) { window->decreaseSpeed(); } } },
+        { "resetspeed",
+          { true, [](MainWindow *window, QAction *) { window->resetSpeed(); } } },
+        { "increasespeed",
+          { true, [](MainWindow *window, QAction *) { window->increaseSpeed(); } } },
+        { "slideshow",
+          { true, [](MainWindow *window, QAction *) { window->toggleSlideshow(); } } },
+        { "openwithother",
+          { true, [](MainWindow *window, QAction *) { OpenWith::showOpenWithDialog(window); } } },
+    };
+
+    const auto key = triggeredAction->data().toStringList().first();
+
+    const auto handler = handlers.constFind(key);
+    if (handler != handlers.constEnd()) {
+        if (!handler->requiresWindow || relevantWindow)
+            handler->run(relevantWindow, triggeredAction);
+        return;
     }
 
-    // The great filter
     if (!relevantWindow)
         return;
 
-    // Conditions that require a valid window pointer
     if (key.startsWith("recent")) {
         QChar finalChar = key.at(key.length() - 1);
         relevantWindow->openRecent(finalChar.digitValue());
-    } else if (key == "openwithother") {
-        OpenWith::showOpenWithDialog(relevantWindow);
     } else if (key.startsWith("openwith")) {
         const auto &openWithItem =
                 triggeredAction->data().toList().at(1).value<OpenWith::OpenWithItem>();
         relevantWindow->openWith(openWithItem);
-    } else if (key == "openurl") {
-        relevantWindow->pickUrl();
-    } else if (key == "reloadfile") {
-        relevantWindow->reloadFile();
-    } else if (key == "opencontainingfolder") {
-        relevantWindow->openContainingFolder();
-    } else if (key == "showfileinfo") {
-        relevantWindow->showFileInfo();
-    } else if (key == "delete") {
-        relevantWindow->askDeleteFile(false);
-    } else if (key == "deletepermanent") {
-        relevantWindow->askDeleteFile(true);
-    } else if (key == "undo") {
-        relevantWindow->undoDelete();
-    } else if (key == "copy") {
-        relevantWindow->copy();
-    } else if (key == "paste") {
-        relevantWindow->paste();
-    } else if (key == "rename") {
-        relevantWindow->rename();
-    } else if (key == "zoomin") {
-        relevantWindow->zoomIn();
-    } else if (key == "zoomout") {
-        relevantWindow->zoomOut();
-    } else if (key == "resetzoom") {
-        relevantWindow->resetZoom();
-    } else if (key == "originalsize") {
-        relevantWindow->originalSize();
-    } else if (key == "rotateright") {
-        relevantWindow->rotateRight();
-    } else if (key == "rotateleft") {
-        relevantWindow->rotateLeft();
-    } else if (key == "mirror") {
-        relevantWindow->mirror();
-    } else if (key == "flip") {
-        relevantWindow->flip();
-    } else if (key == "fullscreen") {
-        relevantWindow->toggleFullScreen();
-    } else if (key == "firstfile") {
-        relevantWindow->firstFile();
-    } else if (key == "previousfile") {
-        relevantWindow->previousFile();
-    } else if (key == "nextfile") {
-        relevantWindow->nextFile();
-    } else if (key == "lastfile") {
-        relevantWindow->lastFile();
-    } else if (key == "randomfile") {
-        relevantWindow->randomFile();
-    } else if (key == "saveframeas") {
-        relevantWindow->saveFrameAs();
-    } else if (key == "pause") {
-        relevantWindow->pause();
-    } else if (key == "nextframe") {
-        relevantWindow->nextFrame();
-    } else if (key == "decreasespeed") {
-        relevantWindow->decreaseSpeed();
-    } else if (key == "resetspeed") {
-        relevantWindow->resetSpeed();
-    } else if (key == "increasespeed") {
-        relevantWindow->increaseSpeed();
-    } else if (key == "slideshow") {
-        relevantWindow->toggleSlideshow();
     }
 }
 
 void ActionManager::initializeActionLibrary()
 {
-    auto *quitAction = new QAction(QIcon::fromTheme("application-exit"), tr("&Quit"));
-    actionLibrary.insert("quit", quitAction);
+    struct ActionDefinition
+    {
+        const char *key;
+        std::function<QAction *()> create;
+    };
+
+    static const ActionDefinition actionDefinitions[] = {
+        { "quit",
+          [] {
+              auto *action = new QAction(QIcon::fromTheme("application-exit"), tr("&Quit"));
 #ifdef Q_OS_WIN
-    //: The quit action is called "Exit" on windows
-    quitAction->setText(tr("Exit"));
+              //: The quit action is called "Exit" on windows
+              action->setText(tr("Exit"));
 #endif
-
-    auto *newWindowAction = new QAction(QIcon::fromTheme("window-new"), tr("New Window"));
-    actionLibrary.insert("newwindow", newWindowAction);
-
-    auto *openAction = new QAction(QIcon::fromTheme("document-open"), tr("&Open..."));
-    actionLibrary.insert("open", openAction);
-
-    auto *openUrlAction =
-            new QAction(QIcon::fromTheme("document-open-remote", QIcon::fromTheme("folder-remote")),
-                        tr("Open &URL..."));
-    actionLibrary.insert("openurl", openUrlAction);
-
-    auto *reloadFileAction = new QAction(QIcon::fromTheme("view-refresh"), tr("Re&load File"));
-    reloadFileAction->setData({ "disable" });
-    actionLibrary.insert("reloadfile", reloadFileAction);
-
-    auto *closeWindowAction = new QAction(QIcon::fromTheme("window-close"), tr("Close Window"));
-    actionLibrary.insert("closewindow", closeWindowAction);
-
-    //: Close all windows, that is
-    auto *closeAllWindowsAction = new QAction(QIcon::fromTheme("window-close"), tr("Close All"));
-    actionLibrary.insert("closeallwindows", closeAllWindowsAction);
-
-    auto *openContainingFolderAction =
-            new QAction(QIcon::fromTheme("document-open"), tr("Open Containing &Folder"));
+              return action;
+          } },
+        { "newwindow",
+          [] { return new QAction(QIcon::fromTheme("window-new"), tr("New Window")); } },
+        { "open",
+          [] { return new QAction(QIcon::fromTheme("document-open"), tr("&Open...")); } },
+        { "openurl",
+          [] {
+              return new QAction(
+                      QIcon::fromTheme("document-open-remote", QIcon::fromTheme("folder-remote")),
+                      tr("Open &URL..."));
+          } },
+        { "reloadfile",
+          [] {
+              auto *action = new QAction(QIcon::fromTheme("view-refresh"), tr("Re&load File"));
+              action->setData({ "disable" });
+              return action;
+          } },
+        { "closewindow",
+          [] { return new QAction(QIcon::fromTheme("window-close"), tr("Close Window")); } },
+        { "closeallwindows",
+          [] {
+              //: Close all windows, that is
+              return new QAction(QIcon::fromTheme("window-close"), tr("Close All"));
+          } },
+        { "opencontainingfolder",
+          [] {
+              auto *action = new QAction(QIcon::fromTheme("document-open"),
+                                         tr("Open Containing &Folder"));
 #ifdef Q_OS_WIN
-    //: Open containing folder on windows
-    openContainingFolderAction->setText(tr("Show in E&xplorer"));
+              //: Open containing folder on windows
+              action->setText(tr("Show in E&xplorer"));
 #elif defined Q_OS_MACOS
-    //: Open containing folder on macOS
-    openContainingFolderAction->setText(tr("Show in &Finder"));
+              //: Open containing folder on macOS
+              action->setText(tr("Show in &Finder"));
 #endif
-    openContainingFolderAction->setData({ "disable" });
-    actionLibrary.insert("opencontainingfolder", openContainingFolderAction);
-
-    auto *showFileInfoAction =
-            new QAction(QIcon::fromTheme("document-properties"), tr("Show File &Info"));
-    showFileInfoAction->setData({ "disable" });
-    actionLibrary.insert("showfileinfo", showFileInfoAction);
-
-    auto *deleteAction = new QAction(QIcon::fromTheme("edit-delete"), tr("&Move to Trash"));
+              action->setData({ "disable" });
+              return action;
+          } },
+        { "showfileinfo",
+          [] {
+              auto *action = new QAction(QIcon::fromTheme("document-properties"),
+                                         tr("Show File &Info"));
+              action->setData({ "disable" });
+              return action;
+          } },
+        { "delete",
+          [] {
+              auto *action = new QAction(QIcon::fromTheme("edit-delete"), tr("&Move to Trash"));
 #ifdef Q_OS_WIN
-    deleteAction->setText(tr("&Delete"));
+              //: Move to Trash on windows
+              action->setText(tr("&Delete"));
 #endif
-    deleteAction->setData({ "disable" });
-    actionLibrary.insert("delete", deleteAction);
-
-    auto *deletePermanentAction =
-            new QAction(QIcon::fromTheme("edit-delete"), tr("Delete Permanently"));
-    deletePermanentAction->setData({ "disable" });
-    actionLibrary.insert("deletepermanent", deletePermanentAction);
-
-    auto *undoAction = new QAction(QIcon::fromTheme("edit-undo"), tr("&Restore from Trash"));
+              action->setData({ "disable" });
+              return action;
+          } },
+        { "deletepermanent",
+          [] {
+              auto *action = new QAction(QIcon::fromTheme("edit-delete"),
+                                         tr("Delete Permanently"));
+              action->setData({ "disable" });
+              return action;
+          } },
+        { "undo",
+          [] {
+              auto *action = new QAction(QIcon::fromTheme("edit-undo"),
+                                         tr("&Restore from Trash"));
 #ifdef Q_OS_WIN
-    undoAction->setText(tr("&Undo Delete"));
+              //: Restore from Trash on windows
+              action->setText(tr("&Undo Delete"));
 #endif
-    undoAction->setData({ "undodisable" });
-    actionLibrary.insert("undo", undoAction);
-
-    auto *copyAction = new QAction(QIcon::fromTheme("edit-copy"), tr("&Copy"));
-    copyAction->setData({ "disable" });
-    actionLibrary.insert("copy", copyAction);
-
-    auto *pasteAction = new QAction(QIcon::fromTheme("edit-paste"), tr("&Paste"));
-    actionLibrary.insert("paste", pasteAction);
-
-    auto *renameAction =
-            new QAction(QIcon::fromTheme("edit-rename", QIcon::fromTheme("document-properties")),
-                        tr("R&ename..."));
-    renameAction->setData({ "disable" });
-    actionLibrary.insert("rename", renameAction);
-
-    auto *zoomInAction = new QAction(QIcon::fromTheme("zoom-in"), tr("Zoom &In"));
-    zoomInAction->setData({ "disable" });
-    actionLibrary.insert("zoomin", zoomInAction);
-
-    auto *zoomOutAction = new QAction(QIcon::fromTheme("zoom-out"), tr("Zoom &Out"));
-    zoomOutAction->setData({ "disable" });
-    actionLibrary.insert("zoomout", zoomOutAction);
-
-    auto *resetZoomAction = new QAction(QIcon::fromTheme("zoom-fit-best"), tr("Reset &Zoom"));
-    resetZoomAction->setData({ "disable" });
-    actionLibrary.insert("resetzoom", resetZoomAction);
-
-    auto *originalSizeAction = new QAction(QIcon::fromTheme("zoom-original"), tr("Ori&ginal Size"));
-    originalSizeAction->setData({ "disable" });
-    actionLibrary.insert("originalsize", originalSizeAction);
-
-    auto *rotateRightAction =
-            new QAction(QIcon::fromTheme("object-rotate-right"), tr("Rotate &Right"));
-    rotateRightAction->setData({ "disable" });
-    actionLibrary.insert("rotateright", rotateRightAction);
-
-    auto *rotateLeftAction =
-            new QAction(QIcon::fromTheme("object-rotate-left"), tr("Rotate &Left"));
-    rotateLeftAction->setData({ "disable" });
-    actionLibrary.insert("rotateleft", rotateLeftAction);
-
-    auto *mirrorAction = new QAction(QIcon::fromTheme("object-flip-horizontal"), tr("&Mirror"));
-    mirrorAction->setData({ "disable" });
-    actionLibrary.insert("mirror", mirrorAction);
-
-    auto *flipAction = new QAction(QIcon::fromTheme("object-flip-vertical"), tr("&Flip"));
-    flipAction->setData({ "disable" });
-    actionLibrary.insert("flip", flipAction);
-
-    auto *toggleTitlebarAction = new QAction(tr("Hide Title&bar"));
-    toggleTitlebarAction->setData({ "windowdisable" });
-    actionLibrary.insert("toggletitlebar", toggleTitlebarAction);
-
-    auto *fullScreenAction =
-            new QAction(QIcon::fromTheme("view-fullscreen"), tr("Enter F&ull Screen"));
-    fullScreenAction->setMenuRole(QAction::NoRole);
-    fullScreenAction->setData({ "windowdisable" });
-    actionLibrary.insert("fullscreen", fullScreenAction);
-
+              action->setData({ "undodisable" });
+              return action;
+          } },
+        { "copy",
+          [] {
+              auto *action = new QAction(QIcon::fromTheme("edit-copy"), tr("&Copy"));
+              action->setData({ "disable" });
+              return action;
+          } },
+        { "paste",
+          [] { return new QAction(QIcon::fromTheme("edit-paste"), tr("&Paste")); } },
+        { "rename",
+          [] {
+              auto *action = new QAction(
+                      QIcon::fromTheme("edit-rename", QIcon::fromTheme("document-properties")),
+                      tr("R&ename..."));
+              action->setData({ "disable" });
+              return action;
+          } },
+        { "zoomin",
+          [] {
+              auto *action = new QAction(QIcon::fromTheme("zoom-in"), tr("Zoom &In"));
+              action->setData({ "disable" });
+              return action;
+          } },
+        { "zoomout",
+          [] {
+              auto *action = new QAction(QIcon::fromTheme("zoom-out"), tr("Zoom &Out"));
+              action->setData({ "disable" });
+              return action;
+          } },
+        { "resetzoom",
+          [] {
+              auto *action = new QAction(QIcon::fromTheme("zoom-fit-best"), tr("Reset &Zoom"));
+              action->setData({ "disable" });
+              return action;
+          } },
+        { "originalsize",
+          [] {
+              auto *action = new QAction(QIcon::fromTheme("zoom-original"), tr("Ori&ginal Size"));
+              action->setData({ "disable" });
+              return action;
+          } },
+        { "rotateright",
+          [] {
+              auto *action = new QAction(QIcon::fromTheme("object-rotate-right"),
+                                         tr("Rotate &Right"));
+              action->setData({ "disable" });
+              return action;
+          } },
+        { "rotateleft",
+          [] {
+              auto *action = new QAction(QIcon::fromTheme("object-rotate-left"),
+                                         tr("Rotate &Left"));
+              action->setData({ "disable" });
+              return action;
+          } },
+        { "mirror",
+          [] {
+              auto *action = new QAction(QIcon::fromTheme("object-flip-horizontal"), tr("&Mirror"));
+              action->setData({ "disable" });
+              return action;
+          } },
+        { "flip",
+          [] {
+              auto *action = new QAction(QIcon::fromTheme("object-flip-vertical"), tr("&Flip"));
+              action->setData({ "disable" });
+              return action;
+          } },
+        { "toggletitlebar",
+          [] {
+              auto *action = new QAction(tr("Hide Title&bar"));
+              action->setData({ "windowdisable" });
+              return action;
+          } },
+        { "fullscreen",
+          [] {
+              auto *action =
+                      new QAction(QIcon::fromTheme("view-fullscreen"), tr("Enter F&ull Screen"));
+              action->setMenuRole(QAction::NoRole);
+              action->setData({ "windowdisable" });
+              return action;
+          } },
 #ifndef Q_OS_MACOS
-    auto *framelessAction = new QAction(tr("&Frameless Window"));
-    framelessAction->setCheckable(true);
-    framelessAction->setChecked(
-            qvApp->getSettingsManager().getBool(SettingsManager::Setting::Frameless));
-    framelessAction->setMenuRole(QAction::NoRole);
-    framelessAction->setData({ "windowdisable" });
-    actionLibrary.insert("frameless", framelessAction);
+        { "frameless",
+          [] {
+              auto *action = new QAction(tr("&Frameless Window"));
+              action->setCheckable(true);
+              action->setChecked(
+                      qvApp->getSettingsManager().getBool(SettingsManager::Setting::Frameless));
+              action->setMenuRole(QAction::NoRole);
+              action->setData({ "windowdisable" });
+              return action;
+          } },
 #endif
-
-    auto *firstFileAction = new QAction(QIcon::fromTheme("go-first"), tr("&First File"));
-    firstFileAction->setData({ "folderdisable" });
-    actionLibrary.insert("firstfile", firstFileAction);
-
-    auto *previousFileAction = new QAction(QIcon::fromTheme("go-previous"), tr("Previous Fi&le"));
-    previousFileAction->setData({ "folderdisable" });
-    actionLibrary.insert("previousfile", previousFileAction);
-
-    auto *nextFileAction = new QAction(QIcon::fromTheme("go-next"), tr("&Next File"));
-    nextFileAction->setData({ "folderdisable" });
-    actionLibrary.insert("nextfile", nextFileAction);
-
-    auto *lastFileAction = new QAction(QIcon::fromTheme("go-last"), tr("Las&t File"));
-    lastFileAction->setData({ "folderdisable" });
-    actionLibrary.insert("lastfile", lastFileAction);
-
-    auto *randomFileAction =
-            new QAction(QIcon::fromTheme("media-playlist-shuffle"), tr("Rando&m File"));
-    randomFileAction->setData({ "folderdisable" });
-    actionLibrary.insert("randomfile", randomFileAction);
-
-    auto *saveFrameAsAction =
-            new QAction(QIcon::fromTheme("document-save-as"), tr("Save Frame &As..."));
-    saveFrameAsAction->setData({ "gifdisable" });
-    actionLibrary.insert("saveframeas", saveFrameAsAction);
-
-    auto *pauseAction = new QAction(QIcon::fromTheme("media-playback-pause"), tr("Pa&use"));
-    pauseAction->setData({ "gifdisable" });
-    actionLibrary.insert("pause", pauseAction);
-
-    auto *nextFrameAction = new QAction(QIcon::fromTheme("media-skip-forward"), tr("&Next Frame"));
-    nextFrameAction->setData({ "gifdisable" });
-    actionLibrary.insert("nextframe", nextFrameAction);
-
-    auto *decreaseSpeedAction =
-            new QAction(QIcon::fromTheme("media-seek-backward"), tr("&Decrease Speed"));
-    decreaseSpeedAction->setData({ "gifdisable" });
-    actionLibrary.insert("decreasespeed", decreaseSpeedAction);
-
-    auto *resetSpeedAction =
-            new QAction(QIcon::fromTheme("media-playback-start"), tr("&Reset Speed"));
-    resetSpeedAction->setData({ "gifdisable" });
-    actionLibrary.insert("resetspeed", resetSpeedAction);
-
-    auto *increaseSpeedAction =
-            new QAction(QIcon::fromTheme("media-skip-forward"), tr("&Increase Speed"));
-    increaseSpeedAction->setData({ "gifdisable" });
-    actionLibrary.insert("increasespeed", increaseSpeedAction);
-
-    auto *slideshowAction =
-            new QAction(QIcon::fromTheme("media-playback-start"), tr("Start S&lideshow"));
-    slideshowAction->setData({ "disable" });
-    actionLibrary.insert("slideshow", slideshowAction);
-
-    //: This is for the options dialog on windows
-    auto *optionsAction = new QAction(
-            QIcon::fromTheme("configure", QIcon::fromTheme("preferences-other")), tr("&Settings"));
+        { "firstfile",
+          [] {
+              auto *action = new QAction(QIcon::fromTheme("go-first"), tr("&First File"));
+              action->setData({ "folderdisable" });
+              return action;
+          } },
+        { "previousfile",
+          [] {
+              auto *action = new QAction(QIcon::fromTheme("go-previous"), tr("Previous Fi&le"));
+              action->setData({ "folderdisable" });
+              return action;
+          } },
+        { "nextfile",
+          [] {
+              auto *action = new QAction(QIcon::fromTheme("go-next"), tr("&Next File"));
+              action->setData({ "folderdisable" });
+              return action;
+          } },
+        { "lastfile",
+          [] {
+              auto *action = new QAction(QIcon::fromTheme("go-last"), tr("Las&t File"));
+              action->setData({ "folderdisable" });
+              return action;
+          } },
+        { "randomfile",
+          [] {
+              auto *action = new QAction(QIcon::fromTheme("media-playlist-shuffle"),
+                                         tr("Rando&m File"));
+              action->setData({ "folderdisable" });
+              return action;
+          } },
+        { "saveframeas",
+          [] {
+              auto *action = new QAction(QIcon::fromTheme("document-save-as"),
+                                         tr("Save Frame &As..."));
+              action->setData({ "gifdisable" });
+              return action;
+          } },
+        { "pause",
+          [] {
+              auto *action = new QAction(QIcon::fromTheme("media-playback-pause"), tr("Pa&use"));
+              action->setData({ "gifdisable" });
+              return action;
+          } },
+        { "nextframe",
+          [] {
+              auto *action = new QAction(QIcon::fromTheme("media-skip-forward"), tr("&Next Frame"));
+              action->setData({ "gifdisable" });
+              return action;
+          } },
+        { "decreasespeed",
+          [] {
+              auto *action = new QAction(QIcon::fromTheme("media-seek-backward"),
+                                         tr("&Decrease Speed"));
+              action->setData({ "gifdisable" });
+              return action;
+          } },
+        { "resetspeed",
+          [] {
+              auto *action = new QAction(QIcon::fromTheme("media-playback-start"),
+                                         tr("&Reset Speed"));
+              action->setData({ "gifdisable" });
+              return action;
+          } },
+        { "increasespeed",
+          [] {
+              auto *action = new QAction(QIcon::fromTheme("media-skip-forward"),
+                                         tr("&Increase Speed"));
+              action->setData({ "gifdisable" });
+              return action;
+          } },
+        { "slideshow",
+          [] {
+              auto *action = new QAction(QIcon::fromTheme("media-playback-start"),
+                                         tr("Start S&lideshow"));
+              action->setData({ "disable" });
+              return action;
+          } },
+        { "options",
+          [] {
+              //: This is for the options dialog on windows
+              auto *action = new QAction(
+                      QIcon::fromTheme("configure", QIcon::fromTheme("preferences-other")),
+                      tr("&Settings"));
 #ifdef Q_OS_MACOS
-    if (QOperatingSystemVersion::current()
-        < QOperatingSystemVersion(QOperatingSystemVersion::MacOS, 13)) {
-        //: This is for the options dialog on older mac versions
-        optionsAction->setText(tr("Preference&s..."));
-    } else {
-        optionsAction->setText(tr("Setting&s..."));
-    }
+              if (QOperatingSystemVersion::current()
+                  < QOperatingSystemVersion(QOperatingSystemVersion::MacOS, 13)) {
+                  //: This is for the options dialog on older mac versions
+                  action->setText(tr("Preference&s..."));
+              } else {
+                  action->setText(tr("Setting&s..."));
+              }
 #endif
-    actionLibrary.insert("options", optionsAction);
-
-    auto *aboutAction = new QAction(QIcon::fromTheme("help-about"), tr("&About"));
+              return action;
+          } },
+        { "about",
+          [] {
+              auto *action = new QAction(QIcon::fromTheme("help-about"), tr("&About"));
 #ifdef Q_OS_MACOS
-    //: This is for the about dialog on mac
-    aboutAction->setText(tr("&About qView"));
+              //: This is for the about dialog on mac
+              action->setText(tr("&About qView"));
 #endif
-    actionLibrary.insert("about", aboutAction);
-
-    auto *welcomeAction = new QAction(QIcon::fromTheme("help-faq", QIcon::fromTheme("help-about")),
-                                      tr("&Welcome"));
-    actionLibrary.insert("welcome", welcomeAction);
-
-    //: This is for clearing the recents menu
-    auto *clearRecentsAction = new QAction(QIcon::fromTheme("edit-delete"), tr("Clear &Menu"));
-    actionLibrary.insert("clearrecents", clearRecentsAction);
-
-    //: Open with other program for unix non-mac
-    auto *openWithOtherAction =
-            new QAction(QIcon::fromTheme("system-run"), tr("Other Application..."));
+              return action;
+          } },
+        { "welcome",
+          [] {
+              return new QAction(QIcon::fromTheme("help-faq", QIcon::fromTheme("help-about")),
+                                 tr("&Welcome"));
+          } },
+        { "clearrecents",
+          [] {
+              //: This is for clearing the recents menu
+              return new QAction(QIcon::fromTheme("edit-delete"), tr("Clear &Menu"));
+          } },
+        { "openwithother",
+          [] {
+              //: Open with other program for unix non-mac
+              auto *action = new QAction(QIcon::fromTheme("system-run"),
+                                         tr("Other Application..."));
 #ifdef Q_OS_WIN
-    //: Open with other program for windows
-    openWithOtherAction->setText(tr("Choose another app"));
+              //: Open with other program for windows
+              action->setText(tr("Choose another app"));
 #elif defined Q_OS_MACOS
-    //: Open with other program for macos
-    openWithOtherAction->setText(tr("Other..."));
+              //: Open with other program for macos
+              action->setText(tr("Other..."));
 #endif
-    actionLibrary.insert("openwithother", openWithOtherAction);
+              return action;
+          } },
+    };
 
-    // Set data values and disable actions
-    const auto keys = actionLibrary.keys();
-    for (const auto &key : keys) {
-        auto *value = actionLibrary.value(key);
-        auto data = value->data().toStringList();
-        data.prepend(key);
-        value->setData(data);
+    for (const auto &definition : actionDefinitions) {
+        auto *action = definition.create();
+        auto data = action->data().toStringList();
+        data.prepend(definition.key);
+        action->setData(data);
 
         if (data.last().contains("disable"))
-            value->setEnabled(false);
+            action->setEnabled(false);
+
+        actionLibrary.insert(definition.key, action);
     }
 }
 

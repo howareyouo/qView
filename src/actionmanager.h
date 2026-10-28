@@ -1,10 +1,10 @@
-#ifndef MENUBUILDER_H
-#define MENUBUILDER_H
-
-#include "mainwindow.h"
+#ifndef ACTIONMANAGER_H
+#define ACTIONMANAGER_H
 
 #include <QMenuBar>
 #include <QMultiHash>
+
+class MainWindow;
 
 class ActionManager : public QObject
 {
@@ -165,4 +165,4 @@ private:
     int openWithMaxLength;
 };
 
-#endif // MENUBUILDER_H
+#endif // ACTIONMANAGER_H
