@@ -42,6 +42,8 @@ QVGraphicsView::QVGraphicsView(QWidget *parent) : QGraphicsView(parent)
     mousePressButton = Qt::MouseButton::NoButton;
     mousePressModifiers = Qt::KeyboardModifier::NoModifier;
     mousePressPosition = QPoint();
+    windowMoveOffset = QPoint();
+    windowMoveStarted = false;
 
     zoomBasisScaleFactor = 1.0;
 
@@ -131,7 +133,13 @@ void QVGraphicsView::mousePressEvent(QMouseEvent *event)
     const auto startFallbackWindowMove = [this, event]() {
         mousePressButton = event->button();
         mousePressModifiers = event->modifiers();
-        mousePressPosition = event->pos();
+#if QT_VERSION >= QT_VERSION_CHECK(6, 0, 0)
+        mousePressPosition = event->globalPosition().toPoint();
+#else
+        mousePressPosition = event->globalPos();
+#endif
+        windowMoveOffset = mousePressPosition - window()->pos();
+        windowMoveStarted = false;
     };
 
     // Check for Ctrl/Cmd drag
@@ -195,7 +203,33 @@ void QVGraphicsView::mousePressEvent(QMouseEvent *event)
         }
     }
 
+    // A fitted image leaves nothing to scroll, so a left drag moves the window instead of
+    // silently doing nothing
+    if (event->button() == Qt::LeftButton && !hasPannableArea()) {
+        const auto windowState = window()->windowState();
+        if (!windowState.testFlag(Qt::WindowFullScreen)
+            && !windowState.testFlag(Qt::WindowMaximized)) {
+            startFallbackWindowMove();
+            event->accept();
+            return;
+        }
+    }
+
     QGraphicsView::mousePressEvent(event);
+}
+
+bool QVGraphicsView::hasPannableArea() const
+{
+    if (!getCurrentFileDetails().isPixmapLoaded)
+        return false;
+
+    const QRectF pixmapRect = transform().mapRect(loadedPixmapItem->sceneBoundingRect());
+    const QRect viewportRect = viewport()->rect();
+
+    // The fitted image is allowed to overflow by the MARGIN, which is not worth panning
+    constexpr int panSlack = 8;
+    return pixmapRect.width() > viewportRect.width() + panSlack
+            || pixmapRect.height() > viewportRect.height() + panSlack;
 }
 
 void QVGraphicsView::mouseMoveEvent(QMouseEvent *event)
@@ -205,12 +239,25 @@ void QVGraphicsView::mouseMoveEvent(QMouseEvent *event)
             && !event->modifiers().testFlag(Qt::ControlModifier)) {
             mousePressButton = Qt::NoButton;
             mousePressModifiers = Qt::NoModifier;
+            windowMoveStarted = false;
             QGraphicsView::mouseMoveEvent(event);
             return;
         }
 
-        const QPoint delta = event->pos() - mousePressPosition;
-        window()->move(window()->pos() + delta);
+#if QT_VERSION >= QT_VERSION_CHECK(6, 0, 0)
+        const QPoint globalPosition = event->globalPosition().toPoint();
+#else
+        const QPoint globalPosition = event->globalPos();
+#endif
+        // Don't start moving the window on the press itself, or double clicking would be eaten
+        if (!windowMoveStarted) {
+            if ((globalPosition - mousePressPosition).manhattanLength()
+                <= QApplication::startDragDistance())
+                return;
+            windowMoveStarted = true;
+        }
+
+        window()->move(globalPosition - windowMoveOffset);
         return;
     }
 
@@ -221,6 +268,7 @@ void QVGraphicsView::mouseReleaseEvent(QMouseEvent *event)
 {
     mousePressButton = Qt::NoButton;
     mousePressModifiers = Qt::NoModifier;
+    windowMoveStarted = false;
     QGraphicsView::mouseReleaseEvent(event);
     viewport()->setCursor(Qt::ArrowCursor);
 }

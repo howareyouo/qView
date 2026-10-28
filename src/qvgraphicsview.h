@@ -115,6 +115,8 @@ private:
     bool growWindowForZoom(qreal scaleFactor);
     bool shrinkWindowForZoom(qreal scaleFactor);
 
+    bool hasPannableArea() const;
+
     QGraphicsPixmapItem *loadedPixmapItem;
 
     constexpr static int MARGIN = -2;
@@ -142,5 +144,7 @@ private:
     Qt::MouseButton mousePressButton;
     Qt::KeyboardModifiers mousePressModifiers;
     QPoint mousePressPosition;
+    QPoint windowMoveOffset;
+    bool windowMoveStarted;
 };
 #endif // QVGRAPHICSVIEW_H
