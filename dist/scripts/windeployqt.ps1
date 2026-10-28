@@ -40,6 +40,12 @@ $argQtPaths = $isCrossCompile ? "--qtpaths=$env:QT_ROOT_DIR\bin\qtpaths.bat" : $
 $argForceOpenSsl = $qtVersion -ge [version]'6.8' ? "--force-openssl" : $null
 & $winDeployQt $argQtPaths $argForceOpenSsl --no-compiler-runtime "bin\qView.exe"
 
+# Copy qView's own translation files next to the Qt ones (they are no longer embedded)
+if (Test-Path "build\translations") {
+    New-Item -ItemType Directory -Force -Path "bin\translations" | Out-Null
+    Copy-Item "build\translations\*.qm" "bin\translations" -Force
+}
+
 $imfDir = "bin\imageformats"
 if ((Test-Path "$imfDir\kimg_tga.dll") -and (Test-Path "$imfDir\qtga.dll")) {
     # Prefer kimageformats TGA plugin which supports more formats

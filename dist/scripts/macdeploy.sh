@@ -24,6 +24,11 @@ if [[ (-f "$IMF_DIR/kimg_tga.dylib" || -f "$IMF_DIR/kimg_tga.so") && -f "$IMF_DI
     rm "$IMF_DIR/libqtga.dylib"
 fi
 
+# Copy translation files into the bundle (they are no longer embedded)
+if [ -d "../build/translations" ]; then
+    cp -R "../build/translations" "qView.app/Contents/MacOS/translations"
+fi
+
 echo "Running codesign"
 if [[ "$APPLE_NOTARIZE_REQUESTED" == "true" ]]; then
     APP_IDENTIFIER=$(/usr/libexec/PlistBuddy -c "Print CFBundleIdentifier" "qView.app/Contents/Info.plist")
