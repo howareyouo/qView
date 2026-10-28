@@ -554,6 +554,10 @@ void QVOptionsDialog::populateCategories(int selectedRow)
     ui->categoryList->setCurrentRow(selectedRow);
     ui->categoryList->setFixedWidth(ui->categoryList->sizeHintForColumn(0)
                                     + ui->categoryList->frameWidth() + listRightPadding);
+    int listContentHeight = 2 * ui->categoryList->frameWidth();
+    for (int i = 0; i < ui->categoryList->count(); i++)
+        listContentHeight += ui->categoryList->sizeHintForRow(i);
+    ui->categoryList->setFixedHeight(listContentHeight);
 }
 
 void QVOptionsDialog::populateLanguages()
