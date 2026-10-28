@@ -124,9 +124,9 @@ void QVOptionsDialog::done(int r)
     QDialog::done(r);
 }
 
-void QVOptionsDialog::modifySetting(QString key, QVariant value)
+void QVOptionsDialog::modifySetting(SettingsManager::Setting setting, QVariant value)
 {
-    transientSettings.insert(key, value);
+    transientSettings.insert(static_cast<int>(setting), value);
     updateButtonBox();
 }
 
@@ -135,10 +135,10 @@ void QVOptionsDialog::saveSettings()
     QSettings settings;
     settings.beginGroup("options");
 
-    const auto keys = transientSettings.keys();
-    for (const auto &key : keys) {
-        const auto &value = transientSettings[key];
-        settings.setValue(key, value);
+    auto &settingsManager = qvApp->getSettingsManager();
+    for (auto it = transientSettings.constBegin(); it != transientSettings.constEnd(); ++it) {
+        const auto setting = static_cast<SettingsManager::Setting>(it.key());
+        settings.setValue(settingsManager.getSettingKey(setting), it.value());
     }
 
     settings.endGroup();
@@ -159,174 +159,206 @@ void QVOptionsDialog::syncSettings(bool defaults, bool makeConnections)
     settingsManager.loadSettings();
 
     // bgcolorenabled
-    syncCheckbox(ui->bgColorCheckbox, "bgcolorenabled", defaults, makeConnections);
+    syncCheckbox(ui->bgColorCheckbox, SettingsManager::Setting::BgColorEnabled, defaults,
+                 makeConnections);
     // bgcolor
-    ui->bgColorButton->setText(settingsManager.getString("bgcolor", defaults));
-    transientSettings.insert("bgcolor", ui->bgColorButton->text());
+    const auto bgColor = SettingsManager::Setting::BgColor;
+    ui->bgColorButton->setText(settingsManager.getString(bgColor, defaults));
+    transientSettings.insert(static_cast<int>(bgColor), ui->bgColorButton->text());
     updateBgColorButton();
     connect(ui->bgColorButton, &QPushButton::clicked, this, &QVOptionsDialog::bgColorButtonClicked);
     // bgcoloralpha
-    syncSpinBox(ui->bgColorAlphaSpinBox, "bgcoloralpha", defaults, makeConnections);
+    syncSpinBox(ui->bgColorAlphaSpinBox, SettingsManager::Setting::BgColorAlpha, defaults,
+                makeConnections);
     setBgColorControlsEnabled(ui->bgColorCheckbox->isChecked());
     // titlebarmode
     syncRadioButtons({ ui->titlebarRadioButton0, ui->titlebarRadioButton1, ui->titlebarRadioButton2,
                        ui->titlebarRadioButton3 },
-                     "titlebarmode", defaults, makeConnections);
+                     SettingsManager::Setting::TitleBarMode, defaults, makeConnections);
     // windowresizemode
-    syncComboBox(ui->windowResizeComboBox, "windowresizemode", defaults, makeConnections);
+    syncComboBox(ui->windowResizeComboBox, SettingsManager::Setting::WindowResizeMode, defaults,
+                 makeConnections);
     windowResizeComboBoxCurrentIndexChanged(ui->windowResizeComboBox->currentIndex());
     // minwindowresizedpercentage
-    syncSpinBox(ui->minWindowResizeSpinBox, "minwindowresizedpercentage", defaults,
-                makeConnections);
+    syncSpinBox(ui->minWindowResizeSpinBox, SettingsManager::Setting::MinWindowResizedPercentage,
+                defaults, makeConnections);
     // maxwindowresizedperecentage
-    syncSpinBox(ui->maxWindowResizeSpinBox, "maxwindowresizedpercentage", defaults,
-                makeConnections);
+    syncSpinBox(ui->maxWindowResizeSpinBox, SettingsManager::Setting::MaxWindowResizedPercentage,
+                defaults, makeConnections);
     // hidetitlebar
-    syncCheckbox(ui->hideTitlebarCheckbox, "hidetitlebar", defaults, makeConnections);
+    syncCheckbox(ui->hideTitlebarCheckbox, SettingsManager::Setting::HideTitlebar, defaults,
+                 makeConnections);
     // forcedarkmode
-    syncCheckbox(ui->forceDarkModeCheckbox, "forcedarkmode", defaults, makeConnections);
+    syncCheckbox(ui->forceDarkModeCheckbox, SettingsManager::Setting::ForceDarkMode, defaults,
+                 makeConnections);
     // quitonlastwindow
-    syncCheckbox(ui->quitOnLastWindowCheckbox, "quitonlastwindow", defaults, makeConnections);
+    syncCheckbox(ui->quitOnLastWindowCheckbox, SettingsManager::Setting::QuitOnLastWindow, defaults,
+                 makeConnections);
     // ctrldragwindow
-    syncCheckbox(ui->ctrlDragCheckbox, "ctrldragwindow", defaults, makeConnections);
+    syncCheckbox(ui->ctrlDragCheckbox, SettingsManager::Setting::CtrlDragWindow, defaults,
+                 makeConnections);
     // frameless
-    syncCheckbox(ui->framelessCheckbox, "frameless", defaults, makeConnections);
+    syncCheckbox(ui->framelessCheckbox, SettingsManager::Setting::Frameless, defaults,
+                 makeConnections);
     // menubarenabled
-    syncCheckbox(ui->menubarCheckbox, "menubarenabled", defaults, makeConnections);
+    syncCheckbox(ui->menubarCheckbox, SettingsManager::Setting::MenuBarEnabled, defaults,
+                 makeConnections);
     // fullscreendetails
-    syncCheckbox(ui->detailsInFullscreen, "fullscreendetails", defaults, makeConnections);
+    syncCheckbox(ui->detailsInFullscreen, SettingsManager::Setting::FullScreenDetails, defaults,
+                 makeConnections);
     // filteringenabled
-    syncCheckbox(ui->filteringCheckbox, "filteringenabled", defaults, makeConnections);
+    syncCheckbox(ui->filteringCheckbox, SettingsManager::Setting::FilteringEnabled, defaults,
+                 makeConnections);
     // scalingenabled
-    syncCheckbox(ui->scalingCheckbox, "scalingenabled", defaults, makeConnections);
+    syncCheckbox(ui->scalingCheckbox, SettingsManager::Setting::ScalingEnabled, defaults,
+                 makeConnections);
     ui->scalingTwoCheckbox->setEnabled(ui->scalingCheckbox->isChecked());
     // scalingtwoenabled
-    syncCheckbox(ui->scalingTwoCheckbox, "scalingtwoenabled", defaults, makeConnections);
+    syncCheckbox(ui->scalingTwoCheckbox, SettingsManager::Setting::ScalingTwoEnabled, defaults,
+                 makeConnections);
     // scalefactor
-    syncSpinBox(ui->scaleFactorSpinBox, "scalefactor", defaults, makeConnections);
+    syncSpinBox(ui->scaleFactorSpinBox, SettingsManager::Setting::ScaleFactor, defaults,
+                makeConnections);
     // scrollzoom
-    syncComboBox(ui->scrollZoomsComboBox, "scrollzoom", defaults, makeConnections);
+    syncComboBox(ui->scrollZoomsComboBox, SettingsManager::Setting::ScrollZoom, defaults,
+                 makeConnections);
     // fractionalzoom
-    syncCheckbox(ui->fractionalZoomCheckbox, "fractionalzoom", defaults, makeConnections);
+    syncCheckbox(ui->fractionalZoomCheckbox, SettingsManager::Setting::FractionalZoom, defaults,
+                 makeConnections);
     // cursorzoom
-    syncCheckbox(ui->cursorZoomCheckbox, "cursorzoom", defaults, makeConnections);
+    syncCheckbox(ui->cursorZoomCheckbox, SettingsManager::Setting::CursorZoom, defaults,
+                 makeConnections);
     // cropmode
-    syncComboBox(ui->cropModeComboBox, "cropmode", defaults, makeConnections);
+    syncComboBox(ui->cropModeComboBox, SettingsManager::Setting::CropMode, defaults,
+                 makeConnections);
     // pastactualsizeenabled
-    syncCheckbox(ui->pastActualSizeCheckbox, "pastactualsizeenabled", defaults, makeConnections);
+    syncCheckbox(ui->pastActualSizeCheckbox, SettingsManager::Setting::PastActualSizeEnabled,
+                 defaults, makeConnections);
     // colorspaceconversion
-    syncComboBox(ui->colorSpaceConversionComboBox, "colorspaceconversion", defaults,
-                 makeConnections);
+    syncComboBox(ui->colorSpaceConversionComboBox, SettingsManager::Setting::ColorSpaceConversion,
+                 defaults, makeConnections);
     // language
-    syncComboBoxData(ui->langComboBox, "language", defaults, makeConnections);
+    syncComboBoxData(ui->langComboBox, SettingsManager::Setting::Language, defaults,
+                     makeConnections);
     // sortmode
-    syncComboBox(ui->sortComboBox, "sortmode", defaults, makeConnections);
+    syncComboBox(ui->sortComboBox, SettingsManager::Setting::SortMode, defaults, makeConnections);
     // sortdescending
-    syncRadioButtons({ ui->descendingRadioButton0, ui->descendingRadioButton1 }, "sortdescending",
-                     defaults, makeConnections);
+    syncRadioButtons({ ui->descendingRadioButton0, ui->descendingRadioButton1 },
+                     SettingsManager::Setting::SortDescending, defaults, makeConnections);
     // preloadingmode
-    syncComboBox(ui->preloadingComboBox, "preloadingmode", defaults, makeConnections);
-    // loopfolders
-    syncCheckbox(ui->loopFoldersCheckbox, "loopfoldersenabled", defaults, makeConnections);
-    // slideshowreversed
-    syncComboBox(ui->slideshowDirectionComboBox, "slideshowreversed", defaults, makeConnections);
-    // slideshowtimer
-    syncDoubleSpinBox(ui->slideshowTimerSpinBox, "slideshowtimer", defaults, makeConnections);
-    // afterdelete
-    syncComboBox(ui->afterDeletionComboBox, "afterdelete", defaults, makeConnections);
-    // askdelete
-    syncCheckbox(ui->askDeleteCheckbox, "askdelete", defaults, makeConnections);
-    // allowmimecontentdetection
-    syncCheckbox(ui->mimeContentDetectionCheckbox, "allowmimecontentdetection", defaults,
+    syncComboBox(ui->preloadingComboBox, SettingsManager::Setting::PreloadingMode, defaults,
                  makeConnections);
+    // loopfolders
+    syncCheckbox(ui->loopFoldersCheckbox, SettingsManager::Setting::LoopFoldersEnabled, defaults,
+                 makeConnections);
+    // slideshowreversed
+    syncComboBox(ui->slideshowDirectionComboBox, SettingsManager::Setting::SlideshowReversed,
+                 defaults, makeConnections);
+    // slideshowtimer
+    syncDoubleSpinBox(ui->slideshowTimerSpinBox, SettingsManager::Setting::SlideshowTimer, defaults,
+                      makeConnections);
+    // afterdelete
+    syncComboBox(ui->afterDeletionComboBox, SettingsManager::Setting::AfterDelete, defaults,
+                 makeConnections);
+    // askdelete
+    syncCheckbox(ui->askDeleteCheckbox, SettingsManager::Setting::AskDelete, defaults,
+                 makeConnections);
+    // allowmimecontentdetection
+    syncCheckbox(ui->mimeContentDetectionCheckbox,
+                 SettingsManager::Setting::AllowMimeContentDetection, defaults, makeConnections);
     // saverecents
-    syncCheckbox(ui->saveRecentsCheckbox, "saverecents", defaults, makeConnections);
+    syncCheckbox(ui->saveRecentsCheckbox, SettingsManager::Setting::SaveRecents, defaults,
+                 makeConnections);
     // updatenotifications
-    syncCheckbox(ui->updateCheckbox, "updatenotifications", defaults, makeConnections);
+    syncCheckbox(ui->updateCheckbox, SettingsManager::Setting::UpdateNotifications, defaults,
+                 makeConnections);
     // skiphidden
-    syncCheckbox(ui->skipHiddenCheckbox, "skiphidden", defaults, makeConnections);
+    syncCheckbox(ui->skipHiddenCheckbox, SettingsManager::Setting::SkipHidden, defaults,
+                 makeConnections);
 }
 
-void QVOptionsDialog::syncCheckbox(QCheckBox *checkbox, const QString &key, bool defaults,
-                                   bool makeConnection)
+void QVOptionsDialog::syncCheckbox(QCheckBox *checkbox, SettingsManager::Setting setting,
+                                   bool defaults, bool makeConnection)
 {
-    auto val = qvApp->getSettingsManager().getBool(key, defaults);
+    auto val = qvApp->getSettingsManager().getBool(setting, defaults);
     checkbox->setChecked(val);
-    transientSettings.insert(key, val);
+    transientSettings.insert(static_cast<int>(setting), val);
 
     if (makeConnection) {
         connect(checkbox, &QCheckBox::stateChanged, this,
-                [this, key](int arg1) { modifySetting(key, static_cast<bool>(arg1)); });
+                [this, setting](int arg1) { modifySetting(setting, static_cast<bool>(arg1)); });
     }
 }
 
-void QVOptionsDialog::syncRadioButtons(QList<QRadioButton *> buttons, const QString &key,
-                                       bool defaults, bool makeConnection)
+void QVOptionsDialog::syncRadioButtons(QList<QRadioButton *> buttons,
+                                       SettingsManager::Setting setting, bool defaults,
+                                       bool makeConnection)
 {
-    auto val = qvApp->getSettingsManager().getInt(key, defaults);
+    auto val = qvApp->getSettingsManager().getInt(setting, defaults);
     buttons.value(val)->setChecked(true);
-    transientSettings.insert(key, val);
+    transientSettings.insert(static_cast<int>(setting), val);
 
     if (makeConnection) {
         for (int i = 0; i < buttons.length(); i++) {
             connect(buttons.value(i), &QRadioButton::clicked, this,
-                    [this, key, i] { modifySetting(key, i); });
+                    [this, setting, i] { modifySetting(setting, i); });
         }
     }
 }
 
-void QVOptionsDialog::syncComboBox(QComboBox *comboBox, const QString &key, bool defaults,
-                                   bool makeConnection)
+void QVOptionsDialog::syncComboBox(QComboBox *comboBox, SettingsManager::Setting setting,
+                                   bool defaults, bool makeConnection)
 {
-    auto val = qvApp->getSettingsManager().getInt(key, defaults);
+    auto val = qvApp->getSettingsManager().getInt(setting, defaults);
     comboBox->setCurrentIndex(val);
-    transientSettings.insert(key, val);
+    transientSettings.insert(static_cast<int>(setting), val);
 
     if (makeConnection) {
         connect(comboBox, QOverload<int>::of(&QComboBox::currentIndexChanged), this,
-                [this, key](int index) { modifySetting(key, index); });
+                [this, setting](int index) { modifySetting(setting, index); });
     }
 }
 
-void QVOptionsDialog::syncComboBoxData(QComboBox *comboBox, const QString &key, bool defaults,
-                                       bool makeConnection)
+void QVOptionsDialog::syncComboBoxData(QComboBox *comboBox, SettingsManager::Setting setting,
+                                       bool defaults, bool makeConnection)
 {
-    auto val = qvApp->getSettingsManager().getString(key, defaults);
+    auto val = qvApp->getSettingsManager().getString(setting, defaults);
     comboBox->setCurrentIndex(comboBox->findData(val));
-    transientSettings.insert(key, val);
+    transientSettings.insert(static_cast<int>(setting), val);
 
     if (makeConnection) {
         connect(comboBox, QOverload<int>::of(&QComboBox::currentIndexChanged), this,
-                [this, key, comboBox](int index) {
+                [this, setting, comboBox](int index) {
                     Q_UNUSED(index)
-                    modifySetting(key, comboBox->currentData());
+                    modifySetting(setting, comboBox->currentData());
                 });
     }
 }
 
-void QVOptionsDialog::syncSpinBox(QSpinBox *spinBox, const QString &key, bool defaults,
-                                  bool makeConnection)
+void QVOptionsDialog::syncSpinBox(QSpinBox *spinBox, SettingsManager::Setting setting,
+                                  bool defaults, bool makeConnection)
 {
-    auto val = qvApp->getSettingsManager().getInt(key, defaults);
+    auto val = qvApp->getSettingsManager().getInt(setting, defaults);
     spinBox->setValue(val);
-    transientSettings.insert(key, val);
+    transientSettings.insert(static_cast<int>(setting), val);
 
     if (makeConnection) {
         connect(spinBox, QOverload<int>::of(&QSpinBox::valueChanged), this,
-                [this, key](int arg1) { modifySetting(key, arg1); });
+                [this, setting](int arg1) { modifySetting(setting, arg1); });
     }
 }
 
-void QVOptionsDialog::syncDoubleSpinBox(QDoubleSpinBox *doubleSpinBox, const QString &key,
-                                        bool defaults, bool makeConnection)
+void QVOptionsDialog::syncDoubleSpinBox(QDoubleSpinBox *doubleSpinBox,
+                                        SettingsManager::Setting setting, bool defaults,
+                                        bool makeConnection)
 {
-    auto val = qvApp->getSettingsManager().getDouble(key, defaults);
+    auto val = qvApp->getSettingsManager().getDouble(setting, defaults);
     doubleSpinBox->setValue(val);
-    transientSettings.insert(key, val);
+    transientSettings.insert(static_cast<int>(setting), val);
 
     if (makeConnection) {
         connect(doubleSpinBox, QOverload<double>::of(&QDoubleSpinBox::valueChanged), this,
-                [this, key](double arg1) { modifySetting(key, arg1); });
+                [this, setting](double arg1) { modifySetting(setting, arg1); });
     }
 }
 
@@ -406,11 +438,12 @@ void QVOptionsDialog::updateButtonBox()
     applyButton->setEnabled(false);
 
     // settings
-    const QList<QString> settingKeys = transientSettings.keys();
-    for (const auto &key : settingKeys) {
+    const auto keys = transientSettings.keys();
+    for (const int key : keys) {
+        const auto setting = static_cast<SettingsManager::Setting>(key);
         const auto &transientValue = transientSettings.value(key);
-        const auto &savedValue = qvApp->getSettingsManager().getSetting(key);
-        const auto &defaultValue = qvApp->getSettingsManager().getSetting(key, true);
+        const auto savedValue = qvApp->getSettingsManager().getSetting(setting);
+        const auto defaultValue = qvApp->getSettingsManager().getSetting(setting, true);
 
         if (transientValue != savedValue)
             applyButton->setEnabled(true);
@@ -444,7 +477,7 @@ void QVOptionsDialog::bgColorButtonClicked()
         if (!selectedColor.isValid())
             return;
 
-        modifySetting("bgcolor", selectedColor.name());
+        modifySetting(SettingsManager::Setting::BgColor, selectedColor.name());
         ui->bgColorButton->setText(selectedColor.name());
         updateBgColorButton();
         colorDialog->deleteLater();

@@ -291,9 +291,9 @@ QVImageCore::FileDetails QVImageCore::getEmptyFileDetails()
 // All file logic, sorting, etc should be moved to a different class or file
 QList<QVImageCore::CompatibleFile> QVImageCore::getCompatibleFiles(const QString &dirPath) const
 {
-    return getCompatibleFilesForDir(dirPath, qvGetSettingInt(SortMode),
-                                    !qvApp->getSettingsManager().getBool("skiphidden"),
-                                    qvGetSettingBool(AllowMimeContentDetection));
+    return getCompatibleFilesForDir(dirPath, qvGetSettingInt(SettingsManager::Setting::SortMode),
+                                    !qvApp->getSettingsManager().getBool(SettingsManager::Setting::SkipHidden),
+                                    qvGetSettingBool(SettingsManager::Setting::AllowMimeContentDetection));
 }
 
 QList<QVImageCore::CompatibleFile>
@@ -377,10 +377,10 @@ QVImageCore::FolderScanParams QVImageCore::makeFolderScanParams(const QString &d
     FolderScanParams params;
     params.scanFolder = true;
     params.dirPath = dirPath;
-    params.sortMode = qvGetSettingInt(SortMode);
-    params.sortDescending = qvGetSettingBool(SortDescending);
-    params.skipHidden = qvApp->getSettingsManager().getBool("skiphidden");
-    params.allowMimeContentDetection = qvGetSettingBool(AllowMimeContentDetection);
+    params.sortMode = qvGetSettingInt(SettingsManager::Setting::SortMode);
+    params.sortDescending = qvGetSettingBool(SettingsManager::Setting::SortDescending);
+    params.skipHidden = qvApp->getSettingsManager().getBool(SettingsManager::Setting::SkipHidden);
+    params.allowMimeContentDetection = qvGetSettingBool(SettingsManager::Setting::AllowMimeContentDetection);
     params.lastDirInfo = lastDirInfo;
     params.randomSortSeed = randomSortSeed;
     return params;
@@ -478,7 +478,7 @@ QVImageCore::FolderScanInfo QVImageCore::scanFolder(const FolderScanParams &para
 
 void QVImageCore::requestCaching(const QColorSpace &targetColorSpace)
 {
-    int preloadingMode = qvGetSettingInt(PreloadingMode);
+    int preloadingMode = qvGetSettingInt(SettingsManager::Setting::PreloadingMode);
     if (preloadingMode == 0) {
         QVImageCore::imageCache.clear();
         return;
@@ -499,7 +499,7 @@ void QVImageCore::requestCaching(const QColorSpace &targetColorSpace)
             continue;
 
         // keep within index range
-        if (qvGetSettingBool(LoopFoldersEnabled)) {
+        if (qvGetSettingBool(SettingsManager::Setting::LoopFoldersEnabled)) {
             if (index > currentFileDetails.folderFileInfoList.length() - 1)
                 index = index - (currentFileDetails.folderFileInfoList.length());
             else if (index < 0)
@@ -780,7 +780,7 @@ void QVImageCore::settingsUpdated()
 
     // preloading mode
     // Cost is in KiB
-    switch (qvGetSettingInt(PreloadingMode)) {
+    switch (qvGetSettingInt(SettingsManager::Setting::PreloadingMode)) {
     case 0: {
         QVImageCore::imageCache.setMaxCost(0);
         break;
@@ -803,8 +803,8 @@ void QVImageCore::settingsUpdated()
     bool changedImagePreprocessing = false;
 
     // colorspaceconversion
-    if (colorSpaceConversion != qvGetSettingInt(ColorSpaceConversion)) {
-        colorSpaceConversion = qvGetSettingInt(ColorSpaceConversion);
+    if (colorSpaceConversion != qvGetSettingInt(SettingsManager::Setting::ColorSpaceConversion)) {
+        colorSpaceConversion = qvGetSettingInt(SettingsManager::Setting::ColorSpaceConversion);
         changedImagePreprocessing = true;
     }
 

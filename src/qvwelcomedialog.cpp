@@ -56,7 +56,7 @@ QVWelcomeDialog::QVWelcomeDialog(QWidget *parent) : QDialog(parent), ui(new Ui::
 #ifdef QV_DISABLE_ONLINE_VERSION_CHECK
     ui->updateCheckBox->hide();
 #else
-    ui->updateCheckBox->setChecked(qvApp->getSettingsManager().getBool("updatenotifications"));
+    ui->updateCheckBox->setChecked(qvApp->getSettingsManager().getBool(SettingsManager::Setting::UpdateNotifications));
     connect(ui->updateCheckBox, &QCheckBox::stateChanged, qvApp, [](int state) {
         QSettings settings;
         settings.beginGroup("options");

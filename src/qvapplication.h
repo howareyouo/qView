@@ -20,14 +20,22 @@
 #define qvApp \
     (qobject_cast<QVApplication *>(QCoreApplication::instance())) // global qvapplication object
 
-#define qvGetSettingBool(setting) \
-    qvApp->getSettingsManager().getBool(SettingsManager::Setting::setting)
-#define qvGetSettingInt(setting) \
-    qvApp->getSettingsManager().getInt(SettingsManager::Setting::setting)
-#define qvGetSettingDouble(setting) \
-    qvApp->getSettingsManager().getDouble(SettingsManager::Setting::setting)
-#define qvGetSettingString(setting) \
-    qvApp->getSettingsManager().getString(SettingsManager::Setting::setting)
+inline bool qvGetSettingBool(SettingsManager::Setting setting)
+{
+    return qvApp->getSettingsManager().getBool(setting);
+}
+inline int qvGetSettingInt(SettingsManager::Setting setting)
+{
+    return qvApp->getSettingsManager().getInt(setting);
+}
+inline double qvGetSettingDouble(SettingsManager::Setting setting)
+{
+    return qvApp->getSettingsManager().getDouble(setting);
+}
+inline const QString qvGetSettingString(SettingsManager::Setting setting)
+{
+    return qvApp->getSettingsManager().getString(setting);
+}
 
 class QVApplication : public QApplication
 {

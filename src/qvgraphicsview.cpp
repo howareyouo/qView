@@ -319,7 +319,7 @@ void QVGraphicsView::wheelEvent(QWheelEvent *event)
 #endif
 
     const bool modifierPressed = event->modifiers().testFlag(Qt::ControlModifier);
-    bool dontZoom = qvGetSettingInt(ScrollZoom) == 2;
+    bool dontZoom = qvGetSettingInt(SettingsManager::Setting::ScrollZoom) == 2;
     if (modifierPressed) {
         dontZoom = !dontZoom;
     }
@@ -331,7 +331,7 @@ void QVGraphicsView::wheelEvent(QWheelEvent *event)
             || event->device()->type() == QInputDevice::DeviceType::TouchScreen;
     // Real touchpads are likely to exhibit these characteristics in empirical testing
     touchDeviceDetected = touchDeviceDetected && event->phase() != Qt::NoScrollPhase;
-    if (touchDeviceDetected && qvGetSettingInt(ScrollZoom) == 1) {
+    if (touchDeviceDetected && qvGetSettingInt(SettingsManager::Setting::ScrollZoom) == 1) {
         // If this is a touch device, override setting
         dontZoom = !modifierPressed;
     }
@@ -362,9 +362,9 @@ void QVGraphicsView::wheelEvent(QWheelEvent *event)
     if (yDelta == 0)
         return;
 
-    const qreal zoomAmountPerWheelClick = qvGetSettingInt(ScaleFactor) / 100.0;
+    const qreal zoomAmountPerWheelClick = qvGetSettingInt(SettingsManager::Setting::ScaleFactor) / 100.0;
     qreal zoomFactor = zoomAmountPerWheelClick;
-    if (qvGetSettingBool(FractionalZoom) || touchDeviceDetected) {
+    if (qvGetSettingBool(SettingsManager::Setting::FractionalZoom) || touchDeviceDetected) {
         const qreal fractionalWheelClicks = qFabs(yDelta) / yScale;
         zoomFactor *= fractionalWheelClicks;
     }
@@ -436,12 +436,12 @@ void QVGraphicsView::postLoad()
 
 void QVGraphicsView::zoomIn(const QPoint &pos)
 {
-    zoom(qvGetSettingInt(ScaleFactor) / 100.0 + 1, pos);
+    zoom(qvGetSettingInt(SettingsManager::Setting::ScaleFactor) / 100.0 + 1, pos);
 }
 
 void QVGraphicsView::zoomOut(const QPoint &pos)
 {
-    zoom(qPow(qvGetSettingInt(ScaleFactor) / 100.0 + 1, -1), pos);
+    zoom(qPow(qvGetSettingInt(SettingsManager::Setting::ScaleFactor) / 100.0 + 1, -1), pos);
 }
 
 void QVGraphicsView::zoom(qreal scaleFactor, const QPoint &pos)
@@ -475,7 +475,7 @@ void QVGraphicsView::zoom(qreal scaleFactor, const QPoint &pos)
 
     // If we have a point to zoom towards, the mouse is on top of the viewport,
     // and cursor zooming is enabled, anchor the zoom to the point under the cursor
-    if (pos != QPoint(-1, -1) && underMouse() && qvGetSettingBool(CursorZoom)) {
+    if (pos != QPoint(-1, -1) && underMouse() && qvGetSettingBool(SettingsManager::Setting::CursorZoom)) {
         const QPointF p1mouse = mapFromScene(scenePos);
         const QPointF move = p1mouse - pos;
         horizontalScrollBar()->setValue(horizontalScrollBar()->value()
@@ -486,7 +486,7 @@ void QVGraphicsView::zoom(qreal scaleFactor, const QPoint &pos)
         centerOn(loadedPixmapItem);
     }
 
-    if (qvGetSettingBool(ScalingEnabled) && !isOriginalSize) {
+    if (qvGetSettingBool(SettingsManager::Setting::ScalingEnabled) && !isOriginalSize) {
         expensiveScaleTimerNew->start();
     }
 }
@@ -526,7 +526,7 @@ bool QVGraphicsView::growWindowForZoom(qreal scaleFactor)
         return false;
 
     // Respect the user's choice of never resizing the window automatically
-    if (qvGetSettingInt(WindowResizeMode) == 0)
+    if (qvGetSettingInt(SettingsManager::Setting::WindowResizeMode) == 0)
         return false;
 
     // Only the fit scale may hand over to the window, otherwise the zoom that was already
@@ -639,7 +639,7 @@ void QVGraphicsView::scaleExpensively()
 
     // If we are above maximum scaling size
     if ((currentScale >= MAX_EXPENSIVE_SCALING_SIZE)
-        || (!qvGetSettingBool(ScalingTwoEnabled) && currentScale > 1.00001)) {
+        || (!qvGetSettingBool(SettingsManager::Setting::ScalingTwoEnabled) && currentScale > 1.00001)) {
         // Return to original size
         makeUnscaled();
         return;
@@ -712,7 +712,7 @@ void QVGraphicsView::updateFilteringMode()
 {
     const bool exceededSmoothScaleLimit = currentScale >= MAX_FILTERING_SIZE;
     loadedPixmapItem->setTransformationMode(!exceededSmoothScaleLimit
-                                                            && qvGetSettingBool(FilteringEnabled)
+                                                            && qvGetSettingBool(SettingsManager::Setting::FilteringEnabled)
                                                     ? Qt::SmoothTransformation
                                                     : Qt::FastTransformation);
 }
@@ -721,7 +721,7 @@ void QVGraphicsView::animatedFrameChanged(QRect rect)
 {
     Q_UNUSED(rect)
 
-    if (qvGetSettingBool(ScalingEnabled)) {
+    if (qvGetSettingBool(SettingsManager::Setting::ScalingEnabled)) {
         scaleExpensively();
     } else {
         loadedPixmapItem->setPixmap(getLoadedMovie().currentPixmap());
@@ -746,7 +746,7 @@ void QVGraphicsView::resetScale()
 
     fitInViewMarginless(loadedPixmapItem);
 
-    if (qvGetSettingBool(ScalingEnabled))
+    if (qvGetSettingBool(SettingsManager::Setting::ScalingEnabled))
         expensiveScaleTimerNew->start();
 }
 
@@ -807,7 +807,7 @@ void QVGraphicsView::goToFile(const GoToFileMode &mode, int index)
     }
     case GoToFileMode::previous: {
         if (newIndex == 0) {
-            if (qvGetSettingBool(LoopFoldersEnabled))
+            if (qvGetSettingBool(SettingsManager::Setting::LoopFoldersEnabled))
                 newIndex = fileList.size() - 1;
             else
                 emit cancelSlideshow();
@@ -818,7 +818,7 @@ void QVGraphicsView::goToFile(const GoToFileMode &mode, int index)
     }
     case GoToFileMode::next: {
         if (fileList.size() - 1 == newIndex) {
-            if (qvGetSettingBool(LoopFoldersEnabled))
+            if (qvGetSettingBool(SettingsManager::Setting::LoopFoldersEnabled))
                 newIndex = 0;
             else
                 emit cancelSlideshow();
@@ -883,7 +883,7 @@ void QVGraphicsView::fitInViewMarginless(const QRectF &rect)
     QSize adjustedImageSize = getCurrentFileDetails().loadedPixmapSize;
     QRectF adjustedBoundingRect = rect;
 
-    switch (qvGetSettingInt(CropMode)) { // should be enum tbh
+    switch (qvGetSettingInt(SettingsManager::Setting::CropMode)) { // should be enum tbh
     case 1: // only take into account height
     {
         adjustedImageSize.setWidth(1);
@@ -914,7 +914,7 @@ void QVGraphicsView::fitInViewMarginless(const QRectF &rect)
 
     QRectF viewRect;
     // Resize to window size unless you are meant to stop at the actual size, basically
-    if (qvGetSettingBool(PastActualSizeEnabled)
+    if (qvGetSettingBool(SettingsManager::Setting::PastActualSizeEnabled)
         || (adjustedImageSize.width() >= adjWidth || adjustedImageSize.height() >= adjHeight)) {
         viewRect = viewport()->rect().adjusted(MARGIN, MARGIN, -MARGIN, -MARGIN);
         viewRect.setHeight(viewRect.height() - obscuredHeight);

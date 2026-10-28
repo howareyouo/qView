@@ -29,7 +29,7 @@ QVApplication::QVApplication(int &argc, char **argv) : QApplication(argc, argv)
 
     // Check for updates
     // TODO: move this to after first window show event
-    if (getSettingsManager().getBool("updatenotifications")) {
+    if (getSettingsManager().getBool(SettingsManager::Setting::UpdateNotifications)) {
         checkUpdates(true);
     }
 
@@ -65,7 +65,7 @@ QVApplication::QVApplication(int &argc, char **argv) : QApplication(argc, argv)
     QVCocoaFunctions::setUserDefaults();
 #endif
 #ifdef Q_OS_MACOS
-    setQuitOnLastWindowClosed(getSettingsManager().getBool("quitonlastwindow"));
+    setQuitOnLastWindowClosed(getSettingsManager().getBool(SettingsManager::Setting::QuitOnLastWindow));
 #endif
 
     hideIncompatibleActions();
@@ -193,7 +193,7 @@ void QVApplication::checkedUpdates()
     if (aboutDialog) {
         aboutDialog->setLatestVersionNum(updateChecker.getLatestVersionNum());
     } else if (updateChecker.getLatestVersionNum() > VERSION
-               && getSettingsManager().getBool("updatenotifications")) {
+               && getSettingsManager().getBool(SettingsManager::Setting::UpdateNotifications)) {
         updateChecker.openDialog();
     }
 #endif // QV_DISABLE_ONLINE_VERSION_CHECK

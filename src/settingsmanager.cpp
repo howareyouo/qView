@@ -98,7 +98,7 @@ QString SettingsManager::getSystemLanguage() const
 
 bool SettingsManager::loadTranslation() const
 {
-    QString lang = getString("language");
+    QString lang = getString(Setting::Language);
     if (lang == "system")
         lang = getSystemLanguage();
 
@@ -151,64 +151,7 @@ void SettingsManager::setSetting(const QString &key, const QVariant &value)
     loadSettings();
 }
 
-// Legacy string-based API - find setting by key and delegate to enum-based method
-const QVariant SettingsManager::getSetting(const QString &key, bool defaults) const
-{
-    // Find the setting enum that matches this key
-    for (const auto &def : settingDefinitions) {
-        if (QString(def.key) == key) {
-            return getSetting(def.setting, defaults);
-        }
-    }
-
-    qWarning() << "Error: Invalid settings key: " + key;
-    return QVariant();
-}
-
-bool SettingsManager::getBool(const QString &key, bool defaults) const
-{
-    auto value = getSetting(key, defaults);
-    if (value.canConvert<bool>())
-        return value.toBool();
-    return false;
-}
-
-int SettingsManager::getInt(const QString &key, bool defaults) const
-{
-    auto value = getSetting(key, defaults);
-    if (value.canConvert<int>())
-        return value.toInt();
-    return 0;
-}
-
-double SettingsManager::getDouble(const QString &key, bool defaults) const
-{
-    auto value = getSetting(key, defaults);
-    if (value.canConvert<double>())
-        return value.toDouble();
-    return 0.0;
-}
-
-const QString SettingsManager::getString(const QString &key, bool defaults) const
-{
-    auto value = getSetting(key, defaults);
-    if (value.canConvert<QString>())
-        return value.toString();
-    return "";
-}
-
-bool SettingsManager::isDefault(const QString &key) const
-{
-    // Find the setting enum that matches this key
-    for (const auto &def : settingDefinitions) {
-        if (QString(def.key) == key) {
-            return isDefault(def.setting);
-        }
-    }
-    return true; // Unknown keys are considered "default"
-}
-
-// Enum-based access methods
+// Enum-based access methods// Enum-based access methods
 const SettingsManager::SettingData &SettingsManager::getSettingData(Setting setting) const
 {
     const int index = static_cast<int>(setting);

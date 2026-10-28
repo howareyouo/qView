@@ -26,21 +26,21 @@ protected:
     void changeEvent(QEvent *event) override;
     void done(int r) override;
 
-    void modifySetting(QString key, QVariant value);
+    void modifySetting(SettingsManager::Setting setting, QVariant value);
     void saveSettings();
     void syncSettings(bool defaults = false, bool makeConnections = false);
-    void syncCheckbox(QCheckBox *checkbox, const QString &key, bool defaults = false,
+    void syncCheckbox(QCheckBox *checkbox, SettingsManager::Setting setting, bool defaults = false,
                       bool makeConnection = false);
-    void syncRadioButtons(QList<QRadioButton *> buttons, const QString &key, bool defaults = false,
-                          bool makeConnection = false);
-    void syncComboBox(QComboBox *comboBox, const QString &key, bool defaults = false,
+    void syncRadioButtons(QList<QRadioButton *> buttons, SettingsManager::Setting setting,
+                          bool defaults = false, bool makeConnection = false);
+    void syncComboBox(QComboBox *comboBox, SettingsManager::Setting setting, bool defaults = false,
                       bool makeConnection = false);
-    void syncComboBoxData(QComboBox *comboBox, const QString &key, bool defaults = false,
-                          bool makeConnection = false);
-    void syncSpinBox(QSpinBox *spinBox, const QString &key, bool defaults = false,
+    void syncComboBoxData(QComboBox *comboBox, SettingsManager::Setting setting,
+                          bool defaults = false, bool makeConnection = false);
+    void syncSpinBox(QSpinBox *spinBox, SettingsManager::Setting setting, bool defaults = false,
                      bool makeConnection = false);
-    void syncDoubleSpinBox(QDoubleSpinBox *doubleSpinBox, const QString &key, bool defaults = false,
-                           bool makeConnection = false);
+    void syncDoubleSpinBox(QDoubleSpinBox *doubleSpinBox, SettingsManager::Setting setting,
+                           bool defaults = false, bool makeConnection = false);
     void syncShortcuts(bool defaults = false);
     void updateShortcutsTable();
     void updateButtonBox();
@@ -68,7 +68,7 @@ private slots:
 private:
     Ui::QVOptionsDialog *ui;
 
-    QHash<QString, QVariant> transientSettings;
+    QHash<int, QVariant> transientSettings;
 
     QList<QStringList> transientShortcuts;
 

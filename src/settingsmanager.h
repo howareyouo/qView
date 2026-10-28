@@ -4,12 +4,6 @@
 #include <QVariant>
 #include <QVector>
 
-struct SettingData
-{
-    QVariant defaultValue;
-    QVariant value;
-};
-
 class SettingsManager : public QObject
 {
     Q_OBJECT
@@ -74,24 +68,17 @@ public:
 
     void setSetting(const QString &key, const QVariant &value);
 
-    // String-based access (legacy)
-    const QVariant getSetting(const QString &key, bool defaults = false) const;
-    bool getBool(const QString &key, bool defaults = false) const;
-    int getInt(const QString &key, bool defaults = false) const;
-    double getDouble(const QString &key, bool defaults = false) const;
-    const QString getString(const QString &key, bool defaults = false) const;
-    bool isDefault(const QString &key) const;
-
-    // Enum-based access (optimized)
-    const QVariant getSetting(Setting setting, bool defaults = false) const;
     bool getBool(Setting setting, bool defaults = false) const;
     int getInt(Setting setting, bool defaults = false) const;
     double getDouble(Setting setting, bool defaults = false) const;
     const QString getString(Setting setting, bool defaults = false) const;
+    const QVariant getSetting(Setting setting, bool defaults = false) const;
     bool isDefault(Setting setting) const;
 
     // Direct enum-based access to setting data
     const SettingData &getSettingData(Setting setting) const;
+
+    const QString &getSettingKey(Setting setting);
 
 signals:
     void settingsUpdated();
@@ -99,7 +86,6 @@ signals:
 private:
     void initializeSettingDataCache();
     QVector<SettingData> settingDataCache;
-    static const QString &getSettingKey(Setting setting);
 };
 
 #endif // SETTINGSMANAGER_H
