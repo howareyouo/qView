@@ -152,6 +152,9 @@ void ShortcutManager::initializeShortcutsList()
 #ifdef Q_OS_WIN
     shortcutsList.last().defaultShortcuts << QKeySequence(Qt::ALT | Qt::Key_Return).toString();
 #endif
+#ifndef Q_OS_MACOS
+    shortcutsList.append({ tr("Frameless Window"), "frameless", {}, {} });
+#endif
     shortcutsList.append({ tr("Save Frame As"),
                            "saveframeas",
                            keyBindingsToStringList(QKeySequence::Save),
