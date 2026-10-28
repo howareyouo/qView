@@ -87,6 +87,20 @@ public:
     explicit ActionManager(QObject *parent = nullptr);
     ~ActionManager() override;
 
+    // Single source of truth for every named action: creation, its handler, whether it
+    // may run without a relevant window, and its shortcut list entry
+    struct ActionDefinition
+    {
+        const char *key;
+        std::function<QAction *()> create;
+        std::function<void(MainWindow *, QAction *)> run;
+        bool requiresWindow = true;
+        std::function<QString()> readableName;
+        std::function<QStringList()> defaultShortcuts;
+    };
+
+    static const QList<ActionDefinition> &definitions();
+
     void settingsUpdated();
 
     QAction *addCloneOfAction(QWidget *parent, const QString &key);
