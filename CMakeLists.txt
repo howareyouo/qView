@@ -153,6 +153,12 @@ add_executable(${PROJECT_NAME} ${EXECUTABLE_TYPE} ${PROJECT_SOURCES} ${PROJECT_H
 
 target_link_libraries(${PROJECT_NAME} PRIVATE Qt${QT_VERSION_MAJOR}::Core Qt${QT_VERSION_MAJOR}::Gui Qt${QT_VERSION_MAJOR}::Network Qt${QT_VERSION_MAJOR}::Widgets Qt${QT_VERSION_MAJOR}::Svg)
 
+# Precompile the heavy Qt umbrella header once, so every source file skips
+# re-parsing it (needs CMake 3.16+, which the project already requires)
+target_precompile_headers(${PROJECT_NAME} PRIVATE
+    <QtWidgets>
+)
+
 # Set the executable name to lowercase on Linux
 if(UNIX AND NOT APPLE)
     set_target_properties(${PROJECT_NAME} PROPERTIES OUTPUT_NAME "qview")

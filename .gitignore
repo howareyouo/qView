@@ -2,6 +2,7 @@
 .*/
 bin/
 build/
+!.github/
 
 moc_*.cpp
 moc_*.h

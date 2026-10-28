@@ -49,10 +49,18 @@ if $CLEAN && [ -d "build" ]; then
     rm -rf build
 fi
 
+# Use ccache as compiler launcher when available, to cache object files across
+# rebuilds and re-configurations
+if command -v ccache >/dev/null 2>&1; then
+    export CCACHE_SLOPPINESS="${CCACHE_SLOPPINESS:+$CCACHE_SLOPPINESS,}pch_defines,time_macros"
+    CMAKE_ARGS="$CMAKE_ARGS -DCMAKE_CXX_COMPILER_LAUNCHER=ccache"
+    echo "ccache found, enabling compiler cache."
+fi
+
 echo "Configuring with: cmake -B build -G Ninja $CMAKE_ARGS"
 
 # Run CMake configuration.
-cmake -B build $CMAKE_ARGS
+cmake -B build -G Ninja $CMAKE_ARGS
 
 # Run the build
 echo "Building project..."
