@@ -498,8 +498,14 @@ bool QVGraphicsView::growWindowForZoom(qreal scaleFactor)
     const QSize maximumSize =
             screenForWindow(viewWindow)->availableGeometry().size() - frameExtraSize;
 
-    QSize targetSize(qRound(currentSize.width() * scaleFactor),
-                     qRound(currentSize.height() * scaleFactor));
+    // Grow both dimensions by the same factor so the window keeps its shape, and stop as soon as
+    // either dimension reaches the screen instead of stretching the other one towards it
+    const qreal widthScaleFactor = maximumSize.width() / qreal(currentSize.width());
+    const qreal heightScaleFactor = maximumSize.height() / qreal(currentSize.height());
+    const qreal appliedScaleFactor = qMin(scaleFactor, qMin(widthScaleFactor, heightScaleFactor));
+
+    QSize targetSize(qRound(currentSize.width() * appliedScaleFactor),
+                     qRound(currentSize.height() * appliedScaleFactor));
     targetSize = targetSize.boundedTo(maximumSize);
     // A window that is already as large as the screen can't grow any further
     if (targetSize.width() <= currentSize.width() && targetSize.height() <= currentSize.height())
@@ -530,8 +536,14 @@ bool QVGraphicsView::shrinkWindowForZoom(qreal scaleFactor)
     const bool windowWasResizedElsewhere = currentSize.width() < preZoomWindowSize.width()
             || currentSize.height() < preZoomWindowSize.height();
 
-    QSize targetSize(qRound(currentSize.width() * scaleFactor),
-                     qRound(currentSize.height() * scaleFactor));
+    // Shrink by the same factor in both dimensions as well, and never below the size the window
+    // had before it started to grow
+    const qreal widthScaleFactor = preZoomWindowSize.width() / qreal(currentSize.width());
+    const qreal heightScaleFactor = preZoomWindowSize.height() / qreal(currentSize.height());
+    const qreal appliedScaleFactor = qMax(scaleFactor, qMax(widthScaleFactor, heightScaleFactor));
+
+    QSize targetSize(qRound(currentSize.width() * appliedScaleFactor),
+                     qRound(currentSize.height() * appliedScaleFactor));
     targetSize.setWidth(qMax(targetSize.width(), preZoomWindowSize.width()));
     targetSize.setHeight(qMax(targetSize.height(), preZoomWindowSize.height()));
 
