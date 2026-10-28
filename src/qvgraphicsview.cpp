@@ -415,9 +415,9 @@ void QVGraphicsView::zoom(qreal scaleFactor, const QPoint &pos)
     setTransform(QTransform(zoomBasis).scale(zoomBasisScaleFactor, zoomBasisScaleFactor));
     absoluteTransform.scale(scaleFactor, scaleFactor);
 
-    // If we are zooming in, we have a point to zoom towards, the mouse is on top of the viewport,
-    // and cursor zooming is enabled
-    if (currentScale > 1.00001 && pos != QPoint(-1, -1) && underMouse()
+    // If we have a point to zoom towards, the mouse is on top of the viewport,
+    // and cursor zooming is enabled, anchor the zoom to the point under the cursor
+    if (pos != QPoint(-1, -1) && underMouse()
         && qvGetSettingBool(CursorZoom)) {
         const QPointF p1mouse = mapFromScene(scenePos);
         const QPointF move = p1mouse - pos;
