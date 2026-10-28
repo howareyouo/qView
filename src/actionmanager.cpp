@@ -430,46 +430,57 @@ void ActionManager::clearRecentsList()
 
 void ActionManager::updateRecentsMenu()
 {
-    for (int i = 0; i < recentsListMaxLength; i++) {
-        const auto values = actionCloneLibrary.values("recent" + QString::number(i));
-        for (const auto &action : values) {
-            // If we are within the bounds of the recent list
-            if (i < recentsList.length()) {
-                auto recent = recentsList.value(i);
-
-                action->setVisible(true);
-                action->setIconVisibleInMenu(
-                        false); // Hide icon temporarily to speed up updates in certain cases
-                action->setText(recent.fileName);
+    updateIndexedCloneActions("recent", recentsListMaxLength, recentsList.length(),
+                              [this](int i, QAction *action) {
+                                  const auto recent = recentsList.value(i);
+                                  action->setText(recent.fileName);
 
 #if defined Q_OS_UNIX && !defined Q_OS_MACOS
-                // set icons for linux users
-                QMimeDatabase mimedb;
-                QMimeType type = mimedb.mimeTypeForFile(recent.filePath);
-                action->setIcon(QIcon::fromTheme(type.iconName(),
-                                                 QIcon::fromTheme(type.genericIconName())));
+                                  // set icons for linux users
+                                  QMimeDatabase mimedb;
+                                  QMimeType type = mimedb.mimeTypeForFile(recent.filePath);
+                                  action->setIcon(QIcon::fromTheme(
+                                          type.iconName(),
+                                          QIcon::fromTheme(type.genericIconName())));
 #else
-                // set icons for mac/windows users
-                QFileInfo fileInfo(recent.filePath);
-                QFileIconProvider provider;
-                QIcon icon = provider.icon(fileInfo);
+                                  // set icons for mac/windows users
+                                  QFileInfo fileInfo(recent.filePath);
+                                  QFileIconProvider provider;
+                                  QIcon icon = provider.icon(fileInfo);
 #  ifdef Q_OS_MACOS
-                // Workaround for native menu slowness; also required so no full-size native icon
-                // ever reaches a menu item (see getCacheableMenuIcon)
-                const QString cacheKey = !fileInfo.suffix().isEmpty()
-                        ? "filetype:" + fileInfo.suffix()
-                        : "filepath:" + recent.filePath;
-                icon = getCacheableMenuIcon(cacheKey, icon);
+                                  // Workaround for native menu slowness; also required so no full-size native icon
+                                  // ever reaches a menu item (see getCacheableMenuIcon)
+                                  const QString cacheKey = !fileInfo.suffix().isEmpty()
+                                          ? "filetype:" + fileInfo.suffix()
+                                          : "filepath:" + recent.filePath;
+                                  icon = getCacheableMenuIcon(cacheKey, icon);
 #  endif
-                action->setIcon(icon);
+                                  action->setIcon(icon);
 #endif
-                action->setIconVisibleInMenu(true);
-            } else {
+                              });
+    emit recentsMenuUpdated();
+}
+
+void ActionManager::updateIndexedCloneActions(
+        const QString &prefix, int max, int itemCount,
+        const std::function<void(int i, QAction *action)> &populate)
+{
+    for (int i = 0; i < max; i++) {
+        const auto values = actionCloneLibrary.values(prefix + QString::number(i));
+        for (const auto &action : values) {
+            // If we are within the bounds of the item list
+            if (i >= itemCount) {
                 action->setVisible(false);
+                continue;
             }
+
+            action->setVisible(true);
+            action->setIconVisibleInMenu(
+                    false); // Hide icon temporarily to speed up updates in certain cases
+            populate(i, action);
+            action->setIconVisibleInMenu(true);
         }
     }
-    emit recentsMenuUpdated();
 }
 
 QMenu *ActionManager::buildOpenWithMenu(QWidget *parent)

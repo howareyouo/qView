@@ -141,6 +141,12 @@ public:
 
     void updateRecentsMenu();
 
+    // Updates every clone of the actions named "prefix0".."prefix{max-1}": clones at or
+    // beyond itemCount are hidden, the rest are shown and handed to populate
+    void updateIndexedCloneActions(
+            const QString &prefix, int max, int itemCount,
+            const std::function<void(int i, QAction *action)> &populate);
+
     QMenu *buildOpenWithMenu(QWidget *parent = nullptr);
 
     static void actionTriggered(QAction *triggeredAction);

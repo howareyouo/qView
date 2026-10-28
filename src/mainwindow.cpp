@@ -541,17 +541,10 @@ void MainWindow::openWithMenuAboutToShow()
 
 void MainWindow::populateOpenWithMenu(const QList<OpenWith::OpenWithItem> openWithItems)
 {
-    for (int i = 0; i < qvApp->getActionManager().getOpenWithMaxLength(); i++) {
-        const auto clonedActions = qvApp->getActionManager().getAllClonesOfAction(
-                "openwith" + QString::number(i), this);
-        for (const auto &action : clonedActions) {
-            // If we are within the bounds of the open with list
-            if (i < openWithItems.length()) {
-                auto openWithItem = openWithItems.value(i);
-
-                action->setVisible(true);
-                action->setIconVisibleInMenu(
-                        false); // Hide icon temporarily to speed up updates in certain cases
+    qvApp->getActionManager().updateIndexedCloneActions(
+            "openwith", qvApp->getActionManager().getOpenWithMaxLength(), openWithItems.length(),
+            [&openWithItems](int i, QAction *action) {
+                const auto openWithItem = openWithItems.value(i);
                 action->setText(openWithItem.name);
                 if (!openWithItem.iconName.isEmpty())
                     action->setIcon(QIcon::fromTheme(openWithItem.iconName));
@@ -560,12 +553,7 @@ void MainWindow::populateOpenWithMenu(const QList<OpenWith::OpenWithItem> openWi
                 auto data = action->data().toList();
                 data.replace(1, QVariant::fromValue(openWithItem));
                 action->setData(data);
-                action->setIconVisibleInMenu(true);
-            } else {
-                action->setVisible(false);
-            }
-        }
-    }
+            });
 }
 
 void MainWindow::refreshProperties()
