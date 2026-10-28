@@ -40,6 +40,8 @@ public:
     void resetScale();
     void originalSize();
 
+    void restoreWindowSize();
+
     void goToFile(const GoToFileMode &mode, int index = 0);
 
     void settingsUpdated();
@@ -110,6 +112,9 @@ private slots:
 private:
     void updateFilteringMode();
 
+    bool growWindowForZoom(qreal scaleFactor);
+    bool shrinkWindowForZoom(qreal scaleFactor);
+
     QGraphicsPixmapItem *loadedPixmapItem;
 
     constexpr static int MARGIN = -2;
@@ -124,6 +129,7 @@ private:
     QPoint lastZoomEventPos;
     QPointF lastZoomRoundingError;
     QPointF lastScrollRoundingError;
+    QSize preZoomWindowSize;
 
     QTransform absoluteTransform;
     QTransform zoomBasis;

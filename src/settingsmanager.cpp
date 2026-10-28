@@ -141,6 +141,16 @@ void SettingsManager::loadSettings()
         emit settingsUpdated();
 }
 
+void SettingsManager::setSetting(const QString &key, const QVariant &value)
+{
+    QSettings settings;
+    settings.beginGroup("options");
+    settings.setValue(key, value);
+    settings.endGroup();
+
+    loadSettings();
+}
+
 // Legacy string-based API - find setting by key and delegate to enum-based method
 const QVariant SettingsManager::getSetting(const QString &key, bool defaults) const
 {

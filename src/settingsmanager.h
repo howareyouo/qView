@@ -72,6 +72,8 @@ public:
 
     void loadSettings();
 
+    void setSetting(const QString &key, const QVariant &value);
+
     // String-based access (legacy)
     const QVariant getSetting(const QString &key, bool defaults = false) const;
     bool getBool(const QString &key, bool defaults = false) const;

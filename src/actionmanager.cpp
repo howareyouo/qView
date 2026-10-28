@@ -59,6 +59,8 @@ QAction *ActionManager::addCloneOfAction(QWidget *parent, const QString &key)
         newAction->setText(action->text());
         newAction->setMenuRole(action->menuRole());
         newAction->setEnabled(action->isEnabled());
+        newAction->setCheckable(action->isCheckable());
+        newAction->setChecked(action->isChecked());
         newAction->setShortcuts(action->shortcuts());
         newAction->setVisible(action->isVisible());
         actionCloneLibrary.insert(key, newAction);
@@ -257,12 +259,16 @@ QMenu *ActionManager::buildViewMenu(bool addIcon, QWidget *parent)
     addCloneOfAction(viewMenu, "flip");
     viewMenu->addSeparator();
     addCloneOfAction(viewMenu, "fullscreen");
+#ifndef Q_OS_MACOS
+    viewMenu->addSeparator();
+    addCloneOfAction(viewMenu, "frameless");
+#endif
 
     menuCloneLibrary.insert(viewMenu->menuAction()->data().toString(), viewMenu);
     return viewMenu;
 }
 
-QMenu *ActionManager::buildToolsMenu(bool addIcon, QWidget *parent)
+QMenu *ActionManager::buildToolsMenu(bool addIcon, QWidget *parent, bool includeOptions)
 {
     auto *toolsMenu = new QMenu(tr("&Tools"), parent);
     toolsMenu->menuAction()->setData("tools");
@@ -278,7 +284,8 @@ QMenu *ActionManager::buildToolsMenu(bool addIcon, QWidget *parent)
     addCloneOfAction(toolsMenu, "increasespeed");
     toolsMenu->addSeparator();
     addCloneOfAction(toolsMenu, "slideshow");
-    addCloneOfAction(toolsMenu, "options");
+    if (includeOptions)
+        addCloneOfAction(toolsMenu, "options");
 
     menuCloneLibrary.insert(toolsMenu->menuAction()->data().toString(), toolsMenu);
     return toolsMenu;
@@ -551,6 +558,9 @@ void ActionManager::actionTriggered(QAction *triggeredAction, MainWindow *releva
         qvApp->openWelcomeDialog(relevantWindow);
     } else if (key == "clearrecents") {
         qvApp->getActionManager().clearRecentsList();
+    } else if (key == "frameless") {
+        // The frameless setting is global, so there is no need for a relevant window here
+        qvApp->getSettingsManager().setSetting("frameless", triggeredAction->isChecked());
     }
 
     // The great filter
@@ -755,6 +765,16 @@ void ActionManager::initializeActionLibrary()
     fullScreenAction->setMenuRole(QAction::NoRole);
     fullScreenAction->setData({ "windowdisable" });
     actionLibrary.insert("fullscreen", fullScreenAction);
+
+#ifndef Q_OS_MACOS
+    auto *framelessAction = new QAction(tr("&Frameless Window"));
+    framelessAction->setCheckable(true);
+    framelessAction->setChecked(
+            qvApp->getSettingsManager().getBool(SettingsManager::Setting::Frameless));
+    framelessAction->setMenuRole(QAction::NoRole);
+    framelessAction->setData({ "windowdisable" });
+    actionLibrary.insert("frameless", framelessAction);
+#endif
 
     auto *firstFileAction = new QAction(QIcon::fromTheme("go-first"), tr("&First File"));
     firstFileAction->setData({ "folderdisable" });

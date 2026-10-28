@@ -12,6 +12,7 @@
 #include <QMovie>
 #include <QtMath>
 #include <QGestureEvent>
+#include <QScreen>
 #include <QScrollBar>
 
 QVGraphicsView::QVGraphicsView(QWidget *parent) : QGraphicsView(parent)
@@ -378,6 +379,7 @@ void QVGraphicsView::reloadFile()
 
 void QVGraphicsView::postLoad()
 {
+    preZoomWindowSize = QSize();
     updateLoadedPixmapItem();
     qvApp->getActionManager().addFileToRecentsList(getCurrentFileDetails().fileInfo);
 
@@ -396,6 +398,14 @@ void QVGraphicsView::zoomOut(const QPoint &pos)
 
 void QVGraphicsView::zoom(qreal scaleFactor, const QPoint &pos)
 {
+    // Let the window grow towards the screen size before the image itself starts to zoom,
+    // and shrink it back equally when zooming out
+    if (scaleFactor > 1.0 && growWindowForZoom(scaleFactor))
+        return;
+
+    if (scaleFactor < 1.0 && shrinkWindowForZoom(scaleFactor))
+        return;
+
     // don't zoom too far out, dude
     currentScale *= scaleFactor;
     if (currentScale >= 500 || currentScale <= 0.01) {
@@ -417,8 +427,7 @@ void QVGraphicsView::zoom(qreal scaleFactor, const QPoint &pos)
 
     // If we have a point to zoom towards, the mouse is on top of the viewport,
     // and cursor zooming is enabled, anchor the zoom to the point under the cursor
-    if (pos != QPoint(-1, -1) && underMouse()
-        && qvGetSettingBool(CursorZoom)) {
+    if (pos != QPoint(-1, -1) && underMouse() && qvGetSettingBool(CursorZoom)) {
         const QPointF p1mouse = mapFromScene(scenePos);
         const QPointF move = p1mouse - pos;
         horizontalScrollBar()->setValue(horizontalScrollBar()->value()
@@ -432,6 +441,129 @@ void QVGraphicsView::zoom(qreal scaleFactor, const QPoint &pos)
     if (qvGetSettingBool(ScalingEnabled) && !isOriginalSize) {
         expensiveScaleTimerNew->start();
     }
+}
+
+static QScreen *screenForWindow(const QWidget *viewWindow)
+{
+    QScreen *foundScreen =
+            viewWindow ? QGuiApplication::screenAt(viewWindow->frameGeometry().center()) : nullptr;
+    return foundScreen ? foundScreen : QGuiApplication::primaryScreen();
+}
+
+static void resizeWindowKeepingCenter(QWidget *viewWindow, const QSize &targetSize)
+{
+    const QRect availableGeometry = screenForWindow(viewWindow)->availableGeometry();
+    const QPoint frameOffset =
+            viewWindow->geometry().topLeft() - viewWindow->frameGeometry().topLeft();
+    const QSize frameSize = viewWindow->frameGeometry().size() - viewWindow->size() + targetSize;
+
+    QRect targetFrameRect(QPoint(), frameSize);
+    targetFrameRect.moveCenter(viewWindow->frameGeometry().center());
+    if (targetFrameRect.left() < availableGeometry.left())
+        targetFrameRect.moveLeft(availableGeometry.left());
+    if (targetFrameRect.top() < availableGeometry.top())
+        targetFrameRect.moveTop(availableGeometry.top());
+    if (targetFrameRect.right() > availableGeometry.right())
+        targetFrameRect.moveRight(availableGeometry.right());
+    if (targetFrameRect.bottom() > availableGeometry.bottom())
+        targetFrameRect.moveBottom(availableGeometry.bottom());
+
+    viewWindow->setGeometry(QRect(targetFrameRect.topLeft() + frameOffset, targetSize));
+}
+
+bool QVGraphicsView::growWindowForZoom(qreal scaleFactor)
+{
+    QWidget *viewWindow = window();
+    if (!viewWindow || isOriginalSize || !getCurrentFileDetails().isPixmapLoaded)
+        return false;
+
+    // Respect the user's choice of never resizing the window automatically
+    if (qvGetSettingInt(WindowResizeMode) == 0)
+        return false;
+
+    // Only the fit scale may hand over to the window, otherwise the zoom that was already
+    // applied to the image would be lost when the window resizes
+    if (qAbs(currentScale - 1.0) > 0.0001)
+        return false;
+
+    if (viewWindow->isMaximized() || viewWindow->isFullScreen())
+        return false;
+
+    // When the fit is locked to the actual size, the image doesn't follow the window size
+    if (qAbs(qAbs(absoluteTransform.m11()) - 1.0) < 0.0001)
+        return false;
+
+    const QSize currentSize = viewWindow->size();
+    const QSize frameExtraSize = viewWindow->frameGeometry().size() - currentSize;
+    const QSize maximumSize =
+            screenForWindow(viewWindow)->availableGeometry().size() - frameExtraSize;
+
+    QSize targetSize(qRound(currentSize.width() * scaleFactor),
+                     qRound(currentSize.height() * scaleFactor));
+    targetSize = targetSize.boundedTo(maximumSize);
+    // A window that is already as large as the screen can't grow any further
+    if (targetSize.width() <= currentSize.width() && targetSize.height() <= currentSize.height())
+        return false;
+
+    if (!preZoomWindowSize.isValid())
+        preZoomWindowSize = currentSize;
+
+    resizeWindowKeepingCenter(viewWindow, targetSize);
+    return true;
+}
+
+bool QVGraphicsView::shrinkWindowForZoom(qreal scaleFactor)
+{
+    QWidget *viewWindow = window();
+    if (!viewWindow || isOriginalSize || !preZoomWindowSize.isValid())
+        return false;
+
+    if (qAbs(currentScale - 1.0) > 0.0001)
+        return false;
+
+    if (viewWindow->isMaximized() || viewWindow->isFullScreen()) {
+        preZoomWindowSize = QSize();
+        return false;
+    }
+
+    const QSize currentSize = viewWindow->size();
+    const bool windowWasResizedElsewhere = currentSize.width() < preZoomWindowSize.width()
+            || currentSize.height() < preZoomWindowSize.height();
+
+    QSize targetSize(qRound(currentSize.width() * scaleFactor),
+                     qRound(currentSize.height() * scaleFactor));
+    targetSize.setWidth(qMax(targetSize.width(), preZoomWindowSize.width()));
+    targetSize.setHeight(qMax(targetSize.height(), preZoomWindowSize.height()));
+
+    if (windowWasResizedElsewhere || targetSize == currentSize) {
+        preZoomWindowSize = QSize();
+        return false;
+    }
+
+    const bool backToStartSize = targetSize == preZoomWindowSize;
+    if (backToStartSize)
+        preZoomWindowSize = QSize();
+
+    resizeWindowKeepingCenter(viewWindow, targetSize);
+    return true;
+}
+
+void QVGraphicsView::restoreWindowSize()
+{
+    if (!preZoomWindowSize.isValid())
+        return;
+
+    const QSize restoreSize = preZoomWindowSize;
+    preZoomWindowSize = QSize();
+
+    QWidget *viewWindow = window();
+    if (!viewWindow || viewWindow->isMaximized() || viewWindow->isFullScreen())
+        return;
+
+    if (viewWindow->size() == restoreSize)
+        return;
+
+    resizeWindowKeepingCenter(viewWindow, restoreSize);
 }
 
 void QVGraphicsView::scaleExpensively()

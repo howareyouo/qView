@@ -104,8 +104,10 @@ MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent), ui(new Ui::MainWi
     actionManager.addCloneOfAction(contextMenu, "previousfile");
     contextMenu->addSeparator();
     contextMenu->addMenu(actionManager.buildViewMenu(true, contextMenu));
-    contextMenu->addMenu(actionManager.buildToolsMenu(true, contextMenu));
+    contextMenu->addMenu(actionManager.buildToolsMenu(true, contextMenu, false));
     contextMenu->addMenu(actionManager.buildHelpMenu(true, contextMenu));
+    contextMenu->addSeparator();
+    actionManager.addCloneOfAction(contextMenu, "options");
 
     connect(contextMenu, &QMenu::triggered, this, [this](QAction *triggeredAction) {
         ActionManager::actionTriggered(triggeredAction, this);
@@ -382,6 +384,10 @@ void MainWindow::settingsUpdated()
 
     // frameless
     updateFrameless();
+    const bool frameless = settingsManager.getBool(SettingsManager::Setting::Frameless);
+    for (const auto &action : qvApp->getActionManager().getAllInstancesOfAction("frameless")) {
+        action->setChecked(frameless);
+    }
 
 #ifdef COCOA_LOADED
     // titlebaralwaysdark/hidetitlebar
@@ -1074,6 +1080,7 @@ void MainWindow::zoomOut()
 void MainWindow::resetZoom()
 {
     graphicsView->resetScale();
+    graphicsView->restoreWindowSize();
 }
 
 void MainWindow::originalSize()
