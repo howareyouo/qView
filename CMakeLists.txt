@@ -63,6 +63,7 @@ set(PROJECT_SOURCES
     src/qvwelcomedialog.cpp
     src/qvinfodialog.cpp
     src/qvimagecore.cpp
+    src/folderscanner.cpp
     src/qvshortcutdialog.cpp
     src/actionmanager.cpp
     src/settingsmanager.cpp
@@ -85,6 +86,7 @@ set(PROJECT_HEADERS
     src/qvwelcomedialog.h
     src/qvinfodialog.h
     src/qvimagecore.h
+    src/folderscanner.h
     src/qvshortcutdialog.h
     src/actionmanager.h
     src/settingsmanager.h
