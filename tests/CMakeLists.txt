@@ -8,6 +8,10 @@ find_package(Qt${QT_VERSION_MAJOR} COMPONENTS Core Gui Network Widgets Svg Test 
 set(TEST_SOURCES
     tst_actionmanagertests.cpp
     ../src/mainwindow.cpp
+    ../src/fileoperations.cpp
+    ../src/urlopener.cpp
+    ../src/slideshowcontroller.cpp
+    ../src/windowgeometry.cpp
     ../src/openwith.cpp
     ../src/qvgraphicsview.cpp
     ../src/qvoptionsdialog.cpp

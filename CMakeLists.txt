@@ -50,6 +50,10 @@ endif()
 set(PROJECT_SOURCES
     src/main.cpp
     src/mainwindow.cpp
+    src/fileoperations.cpp
+    src/urlopener.cpp
+    src/slideshowcontroller.cpp
+    src/windowgeometry.cpp
     src/openwith.cpp
     src/qvgraphicsview.cpp
     src/qvoptionsdialog.cpp
@@ -68,6 +72,10 @@ set(PROJECT_SOURCES
 # Header files
 set(PROJECT_HEADERS
     src/mainwindow.h
+    src/fileoperations.h
+    src/urlopener.h
+    src/slideshowcontroller.h
+    src/windowgeometry.h
     src/openwith.h
     src/qvgraphicsview.h
     src/qvoptionsdialog.h

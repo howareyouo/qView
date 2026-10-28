@@ -3,9 +3,9 @@
 #include "qvapplication.h"
 #include "qvcocoafunctions.h"
 #include "qvrenamedialog.h"
+#include "windowgeometry.h"
 
 #include <QFileDialog>
-#include <QMessageBox>
 #include <QString>
 #include <QGraphicsPixmapItem>
 #include <QPixmap>
@@ -23,15 +23,10 @@
 #include <QMimeDatabase>
 #include <QScreen>
 #include <QCursor>
-#include <QInputDialog>
-#include <QProgressDialog>
 #include <QFutureWatcher>
 #include <QtConcurrent/QtConcurrentRun>
 #include <QMenu>
 #include <QWindow>
-#include <QNetworkRequest>
-#include <QNetworkReply>
-#include <QTemporaryFile>
 
 MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent), ui(new Ui::MainWindow)
 {
@@ -82,8 +77,7 @@ MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent), ui(new Ui::MainWi
     info = new QVInfoDialog(this);
 
     // Timer for slideshow
-    slideshowTimer = new QTimer(this);
-    connect(slideshowTimer, &QTimer::timeout, this, &MainWindow::slideshowAction);
+    connect(slideshowController.timer(), &QTimer::timeout, this, &MainWindow::slideshowAction);
 
     // Context menu
     auto &actionManager = qvApp->getActionManager();
@@ -258,9 +252,9 @@ void MainWindow::changeEvent(QEvent *event)
 void MainWindow::mousePressEvent(QMouseEvent *event)
 {
     if (event->button() == Qt::MouseButton::BackButton)
-        previousFile();
+        view().goToFile(QVGraphicsView::GoToFileMode::previous);
     else if (event->button() == Qt::MouseButton::ForwardButton)
-        nextFile();
+        view().goToFile(QVGraphicsView::GoToFileMode::next);
     else if (event->button() == Qt::MouseButton::MiddleButton)
         resetZoom();
 
@@ -399,7 +393,7 @@ void MainWindow::settingsUpdated()
 #endif
 
     // slideshow timer
-    slideshowTimer->setInterval(static_cast<int>(
+    slideshowController.setInterval(static_cast<int>(
             settingsManager.getDouble(SettingsManager::Setting::SlideshowTimer) * 1000));
 
     ui->fullscreenLabel->setVisible(
@@ -489,8 +483,7 @@ void MainWindow::disableActions()
                 } else if (cloneData.last() == "gifdisable") {
                     clone->setEnabled(getCurrentFileDetails().isMovieLoaded);
                 } else if (cloneData.last() == "undodisable") {
-                    clone->setEnabled(!lastDeletedFiles.isEmpty()
-                                      && !lastDeletedFiles.top().pathInTrash.isEmpty());
+                    clone->setEnabled(fileOperations.canUndo());
                 } else if (cloneData.last() == "folderdisable") {
                     clone->setEnabled(!getCurrentFileDetails().folderFileInfoList.isEmpty());
                 } else if (cloneData.last() == "windowdisable") {
@@ -642,89 +635,16 @@ void MainWindow::setWindowSize()
     QSize imageSize = getCurrentFileDetails().loadedPixmapSize;
     imageSize -= QSize(4, 4);
 
-    // Try to grab the current screen
-    QScreen *currentScreen = screenContaining(frameGeometry());
-
-    // makeshift validity check
-    bool screenValid = QGuiApplication::screens().contains(currentScreen);
-    // Use first screen as fallback
-    if (!screenValid)
-        currentScreen = QGuiApplication::screens().at(0);
-
-    QSize extraWidgetsSize{ 0, 0 };
-
-    if (menuBar()->isVisible())
-        extraWidgetsSize.rheight() += menuBar()->height();
-
-    const int titlebarOverlap = getTitlebarOverlap();
-    if (titlebarOverlap != 0)
-        extraWidgetsSize.rheight() += titlebarOverlap;
-
-    const QSize windowFrameSize = frameGeometry().size() - geometry().size();
-    const QSize hardLimitSize = currentScreen->availableSize() - windowFrameSize - extraWidgetsSize;
-    const QSize screenSize = currentScreen->size();
-    const QSize minWindowSize = (screenSize * minWindowResizedPercentage).boundedTo(hardLimitSize);
-    const QSize maxWindowSize = (screenSize * maxWindowResizedPercentage).boundedTo(hardLimitSize);
-
-    if (imageSize.width() < minWindowSize.width() && imageSize.height() < minWindowSize.height()) {
-        imageSize.scale(minWindowSize, Qt::KeepAspectRatio);
-    } else if (imageSize.width() > maxWindowSize.width()
-               || imageSize.height() > maxWindowSize.height()) {
-        imageSize.scale(maxWindowSize, Qt::KeepAspectRatio);
-    }
-
+#ifdef Q_OS_WIN
     // Windows reports the wrong minimum width, so we constrain the image size relative to the dpi
     // to stop weirdness with tiny images
-#ifdef Q_OS_WIN
-    auto minimumImageSize = QSize(qRound(logicalDpiX() * 1.5), logicalDpiY() / 2);
-    if (imageSize.boundedTo(minimumImageSize) == imageSize)
-        imageSize = minimumImageSize;
+    const QSize minimumImageSize(qRound(logicalDpiX() * 1.5), logicalDpiY() / 2);
+#else
+    const QSize minimumImageSize;
 #endif
 
-    // Match center after new geometry
-    // This is smoother than a single geometry set for some reason
-    QRect oldRect = geometry();
-    resize(imageSize + extraWidgetsSize);
-    QRect newRect = geometry();
-    newRect.moveCenter(oldRect.center());
-
-    // Ensure titlebar is not above or below the available screen area
-    const QRect availableScreenRect = currentScreen->availableGeometry();
-    const int topFrameHeight = geometry().top() - frameGeometry().top();
-    const int windowMinY = availableScreenRect.top() + topFrameHeight;
-    const int windowMaxY =
-            availableScreenRect.top() + availableScreenRect.height() - titlebarOverlap;
-    if (newRect.top() < windowMinY)
-        newRect.moveTop(windowMinY);
-    if (newRect.top() > windowMaxY)
-        newRect.moveTop(windowMaxY);
-
-    setGeometry(newRect);
-}
-
-// Initially copied from Qt source code (QGuiApplication::screenAt) and then customized
-QScreen *MainWindow::screenContaining(const QRect &rect)
-{
-    QScreen *bestScreen = nullptr;
-    int bestScreenArea = 0;
-    QVarLengthArray<const QScreen *, 8> visitedScreens;
-    const auto screens = QGuiApplication::screens();
-    for (const QScreen *screen : screens) {
-        if (visitedScreens.contains(screen))
-            continue;
-        // The virtual siblings include the screen itself, so iterate directly
-        const auto siblings = screen->virtualSiblings();
-        for (QScreen *sibling : siblings) {
-            const QRect intersect = sibling->geometry().intersected(rect);
-            const int area = intersect.width() * intersect.height();
-            if (area > bestScreenArea) {
-                bestScreen = sibling;
-                bestScreenArea = area;
-            }
-            visitedScreens.append(sibling);
-        }
-    }
-    return bestScreen;
+    WindowGeometry::resizeToImage(*this, imageSize, minWindowResizedPercentage,
+                                  maxWindowResizedPercentage, minimumImageSize);
 }
 
 bool MainWindow::getIsPixmapLoaded() const
@@ -739,87 +659,12 @@ void MainWindow::setJustLaunchedWithImage(bool value)
 
 void MainWindow::openUrl(const QUrl &url)
 {
-    if (!url.isValid()) {
-        QMessageBox::critical(this, tr("Error"), tr("Error: URL is invalid"));
-        return;
-    }
-
-    auto request = QNetworkRequest(url);
-    auto *reply = networkAccessManager.get(request);
-    auto *progressDialog = new QProgressDialog(tr("Downloading image..."), tr("Cancel"), 0, 100);
-    progressDialog->setWindowFlag(Qt::WindowContextHelpButtonHint, false);
-    progressDialog->setAutoClose(false);
-    progressDialog->setAutoReset(false);
-    progressDialog->setWindowTitle(tr("Open URL..."));
-    progressDialog->open();
-
-    connect(progressDialog, &QProgressDialog::canceled, reply, [reply] { reply->abort(); });
-
-    connect(reply, &QNetworkReply::downloadProgress, progressDialog,
-            [progressDialog](qreal bytesReceived, qreal bytesTotal) {
-                auto percent = (bytesReceived / bytesTotal) * 100;
-                progressDialog->setValue(qRound(percent));
-            });
-
-    connect(reply, &QNetworkReply::finished, progressDialog, [progressDialog, reply, this] {
-        if (reply->error()) {
-            progressDialog->close();
-            QMessageBox::critical(this, tr("Error"),
-                                  tr("Error ") + QString::number(reply->error()) + ": "
-                                          + reply->errorString());
-
-            progressDialog->deleteLater();
-            return;
-        }
-
-        progressDialog->setMaximum(0);
-
-        auto *tempFile = new QTemporaryFile(this);
-        tempFile->setFileTemplate(QDir::tempPath() + "/" + qvApp->applicationName()
-                                  + ".XXXXXX.png");
-
-        auto *saveFutureWatcher = new QFutureWatcher<bool>();
-        connect(saveFutureWatcher, &QFutureWatcher<bool>::finished, this,
-                [progressDialog, tempFile, saveFutureWatcher, this]() {
-                    progressDialog->close();
-                    if (saveFutureWatcher->result()) {
-                        if (tempFile->open()) {
-                            openFile(tempFile->fileName());
-                        }
-                    } else {
-                        QMessageBox::critical(this, tr("Error"), tr("Error: Invalid image"));
-                        tempFile->deleteLater();
-                    }
-                    progressDialog->deleteLater();
-                    saveFutureWatcher->deleteLater();
-                });
-
-        saveFutureWatcher->setFuture(QtConcurrent::run([reply, tempFile] {
-            return QImage::fromData(reply->readAll()).save(tempFile, "png");
-        }));
-    });
+    urlOpener.openUrl(*this, url);
 }
 
 void MainWindow::pickUrl()
 {
-    auto inputDialog = new QInputDialog(this);
-    inputDialog->setWindowTitle(tr("Open URL..."));
-    inputDialog->setLabelText(tr("URL of a supported image file:"));
-    inputDialog->resize(350, inputDialog->height());
-    inputDialog->setWindowFlag(Qt::WindowContextHelpButtonHint, false);
-    connect(inputDialog, &QInputDialog::finished, this, [inputDialog, this](int result) {
-        if (result) {
-            const auto url = QUrl(inputDialog->textValue());
-            openUrl(url);
-        }
-        inputDialog->deleteLater();
-    });
-    inputDialog->open();
-}
-
-void MainWindow::reloadFile()
-{
-    graphicsView->reloadFile();
+    urlOpener.pickUrl(*this);
 }
 
 void MainWindow::openWith(const OpenWith::OpenWithItem &openWithItem)
@@ -855,170 +700,17 @@ void MainWindow::showFileInfo()
 
 void MainWindow::askDeleteFile(bool permanent)
 {
-    if (!permanent && !qvApp->getSettingsManager().getBool(SettingsManager::Setting::AskDelete)) {
-        deleteFile(permanent);
-        return;
-    }
-
-    const QFileInfo &fileInfo = getCurrentFileDetails().fileInfo;
-    const QString fileName = getCurrentFileDetails().fileInfo.fileName();
-
-    if (!fileInfo.isWritable()) {
-        QMessageBox::critical(
-                this, tr("Error"),
-                tr("Can't delete %1:\nNo write permission or file is read-only.").arg(fileName));
-        return;
-    }
-
-    QString messageText;
-    if (permanent) {
-        messageText = tr("Are you sure you want to delete %1 permanently? This can't be undone.")
-                              .arg(fileName);
-    } else {
-#ifdef Q_OS_WIN
-        messageText = tr("Are you sure you want to move %1 to the Recycle Bin?").arg(fileName);
-#else
-        messageText = tr("Are you sure you want to move %1 to the Trash?").arg(fileName);
-#endif
-    }
-
-    auto *msgBox = new QMessageBox(QMessageBox::Question, tr("Delete"), messageText,
-                                   QMessageBox::Yes | QMessageBox::No, this);
-    if (!permanent)
-        msgBox->setCheckBox(new QCheckBox(tr("Do not ask again")));
-
-    connect(msgBox, &QMessageBox::finished, this, [this, msgBox, permanent](int result) {
-        if (result != QMessageBox::Yes)
-            return;
-
-        if (!permanent) {
-            QSettings settings;
-            settings.beginGroup("options");
-            settings.setValue("askdelete", !msgBox->checkBox()->isChecked());
-            qvApp->getSettingsManager().loadSettings();
-        }
-        this->deleteFile(permanent);
-    });
-
-    msgBox->open();
+    fileOperations.askDeleteFile(*this, permanent);
 }
 
 void MainWindow::deleteFile(bool permanent)
 {
-    const QFileInfo &fileInfo = getCurrentFileDetails().fileInfo;
-    const QString filePath = fileInfo.absoluteFilePath();
-    const QString fileName = fileInfo.fileName();
-
-    graphicsView->closeImage();
-
-    bool success;
-    QString trashFilePath;
-    if (permanent) {
-        success = QFile::remove(filePath);
-    } else {
-#if (QT_VERSION >= QT_VERSION_CHECK(5, 15, 0))
-        QFile file(filePath);
-        success = file.moveToTrash();
-        if (success)
-            trashFilePath = file.fileName();
-#elif defined Q_OS_MACOS && COCOA_LOADED
-        QString trashedFile = QVCocoaFunctions::deleteFile(filePath);
-        success = !trashedFile.isEmpty();
-        if (success)
-            trashFilePath = QUrl(trashedFile).toLocalFile(); // remove file:// protocol
-#elif defined Q_OS_UNIX && !defined Q_OS_MACOS
-        trashFilePath = deleteFileLinuxFallback(filePath, false);
-        success = !trashFilePath.isEmpty();
-#else
-        QMessageBox::critical(this, tr("Not Supported"),
-                              tr("This program was compiled with an old version of Qt and this "
-                                 "feature is not available.\n"
-                                 "If you see this message, please report a bug!"));
-
-        return;
-#endif
-    }
-
-    if (!success || QFile::exists(filePath)) {
-        openFile(filePath);
-        QMessageBox::critical(this, tr("Error"), tr("Can't delete %1.").arg(fileName));
-        return;
-    }
-
-    auto afterDelete = qvApp->getSettingsManager().getInt(SettingsManager::Setting::AfterDelete);
-    if (afterDelete > 1)
-        nextFile();
-    else if (afterDelete < 1)
-        previousFile();
-
-    if (!trashFilePath.isEmpty())
-        lastDeletedFiles.push({ trashFilePath, filePath });
-
-    disableActions();
-}
-
-QString MainWindow::deleteFileLinuxFallback(const QString &path, bool putBack)
-{
-    QStringList gioArgs = { "trash", path };
-    if (putBack)
-        gioArgs.insert(1, "--restore");
-
-    QProcess process;
-    process.start("gio", gioArgs);
-    process.waitForFinished();
-
-    if (process.error() != QProcess::FailedToStart && !putBack) {
-        process.start("gio", { "trash", "--list" });
-        process.waitForFinished();
-
-        const auto &output = QString(process.readAllStandardOutput()).split("\n");
-        for (const auto &line : output) {
-            if (line.contains(path))
-                return line.split("\t").at(0);
-        }
-    }
-
-    qWarning("Failed to use linux fallback delete");
-    return "";
+    fileOperations.deleteFile(*this, permanent);
 }
 
 void MainWindow::undoDelete()
 {
-    if (lastDeletedFiles.isEmpty())
-        return;
-
-    const DeletedPaths lastDeletedFile = lastDeletedFiles.pop();
-    if (lastDeletedFile.pathInTrash.isEmpty() || lastDeletedFile.previousPath.isEmpty())
-        return;
-
-#if (QT_VERSION >= QT_VERSION_CHECK(5, 15, 0)) || (defined Q_OS_MACOS && COCOA_LOADED)
-    const QFileInfo fileInfo(lastDeletedFile.pathInTrash);
-    if (!fileInfo.isWritable()) {
-        QMessageBox::critical(this, tr("Error"),
-                              tr("Can't undo deletion of %1:\n"
-                                 "No write permission or file is read-only.")
-                                      .arg(fileInfo.fileName()));
-        return;
-    }
-
-    bool success = QFile::rename(lastDeletedFile.pathInTrash, lastDeletedFile.previousPath);
-    if (!success) {
-        QMessageBox::critical(this, tr("Error"),
-                              tr("Failed undoing deletion of %1.").arg(fileInfo.fileName()));
-    }
-#elif defined Q_OS_UNIX && !defined Q_OS_MACOS
-    deleteFileLinuxFallback(lastDeletedFile.pathInTrash, true);
-#else
-    QMessageBox::critical(this, tr("Not Supported"),
-                          tr("This program was compiled with an old version of Qt and this feature "
-                             "is not available.\n"
-                             "If you see this message, please report a bug!"));
-
-    return;
-#endif
-
-    openFile(lastDeletedFile.previousPath);
-    disableActions();
+    fileOperations.undoDelete(*this);
 }
 
 void MainWindow::copy()
@@ -1066,74 +758,10 @@ void MainWindow::rename()
     renameDialog->open();
 }
 
-void MainWindow::zoomIn()
-{
-    graphicsView->zoomIn();
-}
-
-void MainWindow::zoomOut()
-{
-    graphicsView->zoomOut();
-}
-
 void MainWindow::resetZoom()
 {
     graphicsView->resetScale();
     graphicsView->restoreWindowSize();
-}
-
-void MainWindow::originalSize()
-{
-    graphicsView->originalSize();
-}
-
-void MainWindow::rotateRight()
-{
-    graphicsView->rotateImage(90);
-    resetZoom();
-}
-
-void MainWindow::rotateLeft()
-{
-    graphicsView->rotateImage(-90);
-    resetZoom();
-}
-
-void MainWindow::mirror()
-{
-    graphicsView->scale(-1, 1);
-    resetZoom();
-}
-
-void MainWindow::flip()
-{
-    graphicsView->scale(1, -1);
-    resetZoom();
-}
-
-void MainWindow::firstFile()
-{
-    graphicsView->goToFile(QVGraphicsView::GoToFileMode::first);
-}
-
-void MainWindow::previousFile()
-{
-    graphicsView->goToFile(QVGraphicsView::GoToFileMode::previous);
-}
-
-void MainWindow::nextFile()
-{
-    graphicsView->goToFile(QVGraphicsView::GoToFileMode::next);
-}
-
-void MainWindow::lastFile()
-{
-    graphicsView->goToFile(QVGraphicsView::GoToFileMode::last);
-}
-
-void MainWindow::randomFile()
-{
-    graphicsView->goToFile(QVGraphicsView::GoToFileMode::random);
 }
 
 void MainWindow::saveFrameAs()
@@ -1197,35 +825,21 @@ void MainWindow::nextFrame()
 
 void MainWindow::toggleSlideshow()
 {
-    const auto slideshowActions = qvApp->getActionManager().getAllClonesOfAction("slideshow", this);
-
-    if (slideshowTimer->isActive()) {
-        slideshowTimer->stop();
-        for (const auto &slideshowAction : slideshowActions) {
-            slideshowAction->setText(tr("Start S&lideshow"));
-            slideshowAction->setIcon(QIcon::fromTheme("media-playback-start"));
-        }
-    } else {
-        slideshowTimer->start();
-        for (const auto &slideshowAction : slideshowActions) {
-            slideshowAction->setText(tr("Stop S&lideshow"));
-            slideshowAction->setIcon(QIcon::fromTheme("media-playback-stop"));
-        }
-    }
+    slideshowController.toggle(*this);
 }
 
 void MainWindow::cancelSlideshow()
 {
-    if (slideshowTimer->isActive())
+    if (slideshowController.isActive())
         toggleSlideshow();
 }
 
 void MainWindow::slideshowAction()
 {
     if (qvApp->getSettingsManager().getBool(SettingsManager::Setting::SlideshowReversed))
-        previousFile();
+        view().goToFile(QVGraphicsView::GoToFileMode::previous);
     else
-        nextFile();
+        view().goToFile(QVGraphicsView::GoToFileMode::next);
 }
 
 void MainWindow::decreaseSpeed()

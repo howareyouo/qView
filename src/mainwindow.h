@@ -6,10 +6,12 @@
 #include "qvgraphicsview.h"
 #include "openwith.h"
 
+#include "fileoperations.h"
+#include "slideshowcontroller.h"
+#include "urlopener.h"
+
 #include <QMainWindow>
 #include <QShortcut>
-#include <QNetworkAccessManager>
-#include <QStack>
 
 namespace Ui {
 class MainWindow;
@@ -20,14 +22,10 @@ class MainWindow : public QMainWindow
     Q_OBJECT
 
 public:
-    struct DeletedPaths
-    {
-        QString pathInTrash;
-        QString previousPath;
-    };
-
     explicit MainWindow(QWidget *parent = nullptr);
     ~MainWindow() override;
+
+    QVGraphicsView &view() { return *graphicsView; }
 
     void requestPopulateOpenWithMenu();
 
@@ -47,15 +45,11 @@ public:
 
     void setJustLaunchedWithImage(bool value);
 
-    QScreen *screenContaining(const QRect &rect);
-
     void openRecent(int i);
 
     void openUrl(const QUrl &url);
 
     void pickUrl();
-
-    void reloadFile();
 
     void openContainingFolder();
 
@@ -67,8 +61,6 @@ public:
 
     void deleteFile(bool permanent);
 
-    QString deleteFileLinuxFallback(const QString &path, bool putBack);
-
     void undoDelete();
 
     void copy();
@@ -77,31 +69,7 @@ public:
 
     void rename();
 
-    void zoomIn();
-
-    void zoomOut();
-
     void resetZoom();
-
-    void originalSize();
-
-    void rotateRight();
-
-    void rotateLeft();
-
-    void mirror();
-
-    void flip();
-
-    void firstFile();
-
-    void previousFile();
-
-    void nextFile();
-
-    void lastFile();
-
-    void randomFile();
 
     void saveFrameAs();
 
@@ -169,8 +137,6 @@ private:
     QMenu *contextMenu;
     QMenu *virtualMenu;
 
-    QTimer *slideshowTimer;
-
     QShortcut *escShortcut;
 
     QVInfoDialog *info;
@@ -181,9 +147,11 @@ private:
 
     Qt::WindowStates storedWindowState;
 
-    QNetworkAccessManager networkAccessManager;
+    FileOperations fileOperations;
 
-    QStack<DeletedPaths> lastDeletedFiles;
+    UrlOpener urlOpener;
+
+    SlideshowController slideshowController;
 
     QTimer *populateOpenWithTimer;
     QFutureWatcher<QList<OpenWith::OpenWithItem>> openWithFutureWatcher;

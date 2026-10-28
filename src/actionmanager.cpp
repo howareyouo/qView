@@ -585,7 +585,7 @@ void ActionManager::actionTriggered(QAction *triggeredAction, MainWindow *releva
         { "openurl",
           { true, [](MainWindow *window, QAction *) { window->pickUrl(); } } },
         { "reloadfile",
-          { true, [](MainWindow *window, QAction *) { window->reloadFile(); } } },
+          { true, [](MainWindow *window, QAction *) { window->view().reloadFile(); } } },
         { "opencontainingfolder",
           { true, [](MainWindow *window, QAction *) { window->openContainingFolder(); } } },
         { "showfileinfo",
@@ -603,33 +603,64 @@ void ActionManager::actionTriggered(QAction *triggeredAction, MainWindow *releva
         { "rename",
           { true, [](MainWindow *window, QAction *) { window->rename(); } } },
         { "zoomin",
-          { true, [](MainWindow *window, QAction *) { window->zoomIn(); } } },
+          { true, [](MainWindow *window, QAction *) { window->view().zoomIn(); } } },
         { "zoomout",
-          { true, [](MainWindow *window, QAction *) { window->zoomOut(); } } },
+          { true, [](MainWindow *window, QAction *) { window->view().zoomOut(); } } },
         { "resetzoom",
           { true, [](MainWindow *window, QAction *) { window->resetZoom(); } } },
         { "originalsize",
-          { true, [](MainWindow *window, QAction *) { window->originalSize(); } } },
+          { true, [](MainWindow *window, QAction *) { window->view().originalSize(); } } },
         { "rotateright",
-          { true, [](MainWindow *window, QAction *) { window->rotateRight(); } } },
+          { true,
+            [](MainWindow *window, QAction *) {
+                window->view().rotateImage(90);
+                window->resetZoom();
+            } } },
         { "rotateleft",
-          { true, [](MainWindow *window, QAction *) { window->rotateLeft(); } } },
+          { true,
+            [](MainWindow *window, QAction *) {
+                window->view().rotateImage(-90);
+                window->resetZoom();
+            } } },
         { "mirror",
-          { true, [](MainWindow *window, QAction *) { window->mirror(); } } },
+          { true,
+            [](MainWindow *window, QAction *) {
+                window->view().scale(-1, 1);
+                window->resetZoom();
+            } } },
         { "flip",
-          { true, [](MainWindow *window, QAction *) { window->flip(); } } },
+          { true,
+            [](MainWindow *window, QAction *) {
+                window->view().scale(1, -1);
+                window->resetZoom();
+            } } },
         { "fullscreen",
           { true, [](MainWindow *window, QAction *) { window->toggleFullScreen(); } } },
         { "firstfile",
-          { true, [](MainWindow *window, QAction *) { window->firstFile(); } } },
+          { true,
+            [](MainWindow *window, QAction *) {
+                window->view().goToFile(QVGraphicsView::GoToFileMode::first);
+            } } },
         { "previousfile",
-          { true, [](MainWindow *window, QAction *) { window->previousFile(); } } },
+          { true,
+            [](MainWindow *window, QAction *) {
+                window->view().goToFile(QVGraphicsView::GoToFileMode::previous);
+            } } },
         { "nextfile",
-          { true, [](MainWindow *window, QAction *) { window->nextFile(); } } },
+          { true,
+            [](MainWindow *window, QAction *) {
+                window->view().goToFile(QVGraphicsView::GoToFileMode::next);
+            } } },
         { "lastfile",
-          { true, [](MainWindow *window, QAction *) { window->lastFile(); } } },
+          { true,
+            [](MainWindow *window, QAction *) {
+                window->view().goToFile(QVGraphicsView::GoToFileMode::last);
+            } } },
         { "randomfile",
-          { true, [](MainWindow *window, QAction *) { window->randomFile(); } } },
+          { true,
+            [](MainWindow *window, QAction *) {
+                window->view().goToFile(QVGraphicsView::GoToFileMode::random);
+            } } },
         { "saveframeas",
           { true, [](MainWindow *window, QAction *) { window->saveFrameAs(); } } },
         { "pause",
