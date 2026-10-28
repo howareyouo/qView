@@ -260,7 +260,6 @@ QMenu *ActionManager::buildViewMenu(bool addIcon, QWidget *parent, bool includeF
     viewMenu->addSeparator();
     addCloneOfAction(viewMenu, "fullscreen");
 #ifndef Q_OS_MACOS
-    viewMenu->addSeparator();
     addCloneOfAction(viewMenu, "frameless");
 #endif
     if (includeFileInfo) {
