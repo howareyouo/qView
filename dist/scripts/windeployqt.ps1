@@ -23,6 +23,12 @@ if ((Test-Path "$imfDir\kimg_tga.dll") -and (Test-Path "$imfDir\qtga.dll")) {
     Remove-Item "$imfDir\qtga.dll"
 }
 
+# Remove plugins that a desktop image viewer never loads
+# (TUIO touch protocol, network reachability probe, certificate-only TLS backend)
+Remove-Item "bin\generic\qtuiotouchplugin.dll" -Force -ErrorAction SilentlyContinue
+Remove-Item "bin\networkinformation" -Recurse -Force -ErrorAction SilentlyContinue
+Remove-Item "bin\tls\qcertonlybackend.dll" -Force -ErrorAction SilentlyContinue
+
 if ($NoInstaller) {
     # Keep the portable qView.exe as-is, without building an installer
     Write-Host "Skipping installer build"
