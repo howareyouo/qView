@@ -144,19 +144,13 @@ void ShortcutManager::initializeShortcutsList()
             { tr("Flip"), "flip", QStringList(QKeySequence(Qt::CTRL | Qt::Key_F).toString()), {} });
     shortcutsList.append({ tr("Fullscreen"),
                            "fullscreen",
-                           QStringList(QKeySequence(Qt::Key_F11).toString()),
+                           QStringList(QKeySequence(Qt::Key_Return).toString()),
                            {} });
 
-    // Fixes alt+enter only working with numpad enter when using qt's standard keybinds
+    // Alt+enter should also toggle fullscreen, and it has to be bound explicitly because
+    // Qt's key bindings only match the numpad enter key
 #ifdef Q_OS_WIN
     shortcutsList.last().defaultShortcuts << QKeySequence(Qt::ALT | Qt::Key_Return).toString();
-#elif defined Q_OS_UNIX & !defined Q_OS_MACOS
-    // F11 is for some reason not there by default in GNOME
-    if (shortcutsList.last().defaultShortcuts.contains(
-                QKeySequence(Qt::CTRL | Qt::Key_F11).toString())
-        && !shortcutsList.last().defaultShortcuts.contains(QKeySequence(Qt::Key_F11).toString())) {
-        shortcutsList.last().defaultShortcuts << QKeySequence(Qt::Key_F11).toString();
-    }
 #endif
     shortcutsList.append({ tr("Save Frame As"),
                            "saveframeas",
