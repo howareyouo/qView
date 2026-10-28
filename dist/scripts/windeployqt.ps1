@@ -1,6 +1,7 @@
 param
 (
-    $NightlyVersion = ""
+    $NightlyVersion = "",
+    [switch]$NoInstaller
 )
 
 $qtVersion = [version](qmake -query QT_VERSION)
@@ -46,7 +47,10 @@ if ((Test-Path "$imfDir\kimg_tga.dll") -and (Test-Path "$imfDir\qtga.dll")) {
     Remove-Item "$imfDir\qtga.dll"
 }
 
-if ($NightlyVersion -eq '') {
+if ($NoInstaller) {
+    # Keep the portable qView.exe as-is, without building an installer
+    Write-Host "Skipping installer build"
+} elseif ($NightlyVersion -eq '') {
     # Call innomake if we are not building a nightly version (no version passed)
     & "dist/scripts/innomake.ps1"
 } else {
