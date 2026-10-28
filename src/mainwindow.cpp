@@ -249,8 +249,12 @@ void MainWindow::mousePressEvent(QMouseEvent *event)
         view().goToFile(QVGraphicsView::GoToFileMode::previous);
     else if (event->button() == Qt::MouseButton::ForwardButton)
         view().goToFile(QVGraphicsView::GoToFileMode::next);
-    else if (event->button() == Qt::MouseButton::MiddleButton)
-        resetZoom();
+    else if (event->button() == Qt::MouseButton::MiddleButton) {
+        if (getCurrentFileDetails().isPixmapLoaded && graphicsView->isResetScale())
+            toggleFullScreen();
+        else
+            resetZoom();
+    }
 
     QMainWindow::mousePressEvent(event);
 }

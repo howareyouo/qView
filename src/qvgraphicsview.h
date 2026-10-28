@@ -59,6 +59,8 @@ public:
     const QPixmap &getLoadedPixmap() const { return imageCore.getLoadedPixmap(); }
     const QMovie &getLoadedMovie() const { return imageCore.getLoadedMovie(); }
 
+    bool isResetScale() const { return !isOriginalSize && qFuzzyCompare(currentScale, 1.0); }
+
 signals:
     void cancelSlideshow();
 
