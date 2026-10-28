@@ -1,0 +1,51 @@
+name: Build Windows x64
+
+on:
+  push:
+  workflow_dispatch:
+
+concurrency:
+  group: build-windows-x64-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    name: Build Windows x64
+    runs-on: windows-2022
+    steps:
+      - name: Set environment variables
+        shell: bash
+        run: |
+          echo "qtArch=win64_msvc2022_64" >> $GITHUB_ENV
+          if [ "${{ inputs.isRelease }}" != "true" ]; then
+            buildNum=$(date '+%Y-%m-%d').$GITHUB_RUN_ATTEMPT
+            echo "nightlyDefines=NIGHTLY=$buildNum" >> $GITHUB_ENV
+            echo "nightlyString=-nightly" >> $GITHUB_ENV
+            echo "buildNumString=$buildNum" >> $GITHUB_ENV
+          fi
+
+      - uses: actions/checkout@v4
+
+      - name: Install Qt
+        uses: jurplel/install-qt-action@v4
+        with:
+          version: '6.8.3'
+          arch: 'win64_msvc2022_64'
+          cache: true
+          modules: 'qtimageformats'
+
+      - name: Build qView
+        shell: pwsh
+        run: dist/scripts/build.ps1 -CI
+
+      - name: Deploy qView
+        shell: pwsh
+        run: |
+          & dist/scripts/download-plugins.ps1
+          & dist/scripts/windeployqt.ps1 ${{ env.buildNumString }}
+
+      - name: Upload Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: qView${{ env.nightlyString }}-Windows_64-${{ env.buildNumString }}
+          path: bin
