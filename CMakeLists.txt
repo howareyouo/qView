@@ -232,19 +232,29 @@ if(DEFINED NIGHTLY)
     target_compile_definitions(${PROJECT_NAME} PRIVATE "NIGHTLY=\"${NIGHTLY}\"")
 endif()
 
-# Handle translations
+# Handle translations: generate .qm files into a "translations" folder next to the
+# executable instead of embedding them, so they can be modified or removed after build
 if(Qt${QT_VERSION_MAJOR}LinguistTools_FOUND)
     message(STATUS "LinguistTools found, building translations.")
-    file(GLOB TRANSLATIONS "i18n/qview_*.ts")
-    if(QT_VERSION_MAJOR EQUAL 5)
-        # For Qt5, use qt5_add_translation (not qt5_add_translations)
-        qt5_add_translation(QM_FILES ${TRANSLATIONS})
-        # Add the generated .qm files as resources or install them
-        target_sources(${PROJECT_NAME} PRIVATE ${QM_FILES})
-    else()
-        # For Qt6, use qt_add_translations
-        qt_add_translations(${PROJECT_NAME} TS_FILES ${TRANSLATIONS})
-    endif()
+    file(GLOB TRANSLATIONS CONFIGURE_DEPENDS "i18n/qview_*.ts")
+    set(QM_OUTPUT_DIR "${CMAKE_CURRENT_BINARY_DIR}/translations")
+    file(MAKE_DIRECTORY "${QM_OUTPUT_DIR}")
+    set(QM_FILES "")
+    foreach(ts_file IN LISTS TRANSLATIONS)
+        get_filename_component(ts_file "${ts_file}" ABSOLUTE)
+        get_filename_component(qm_name "${ts_file}" NAME_WE)
+        set(qm_file "${QM_OUTPUT_DIR}/${qm_name}.qm")
+        add_custom_command(OUTPUT "${qm_file}"
+            COMMAND Qt${QT_VERSION_MAJOR}::lrelease "${ts_file}" -qm "${qm_file}"
+            DEPENDS "${ts_file}"
+            COMMENT "Generating translations/${qm_name}.qm"
+            VERBATIM)
+        list(APPEND QM_FILES "${qm_file}")
+    endforeach()
+    add_custom_target(qview_translations ALL DEPENDS ${QM_FILES})
+    add_dependencies(${PROJECT_NAME} qview_translations)
+    install(DIRECTORY "${QM_OUTPUT_DIR}/"
+            DESTINATION ${CMAKE_INSTALL_BINDIR}/translations)
 else()
     message(STATUS "LinguistTools not found, skipping translations.")
 endif()

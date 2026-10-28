@@ -78,12 +78,6 @@ QVOptionsDialog::QVOptionsDialog(QWidget *parent) : QDialog(parent), ui(new Ui::
     ui->quitOnLastWindowCheckbox->hide();
 #endif
 
-// Hide language selection below 5.12, as 5.12 does not support embedding the translations :(
-#if (QT_VERSION < QT_VERSION_CHECK(5, 12, 0))
-    ui->langComboBox->hide();
-    ui->langComboLabel->hide();
-#endif
-
 // Hide color space conversion below 5.14, which is when color space support was introduced
 #if (QT_VERSION < QT_VERSION_CHECK(5, 14, 0))
     ui->colorSpaceConversionComboBox->hide();
@@ -570,7 +564,8 @@ void QVOptionsDialog::populateLanguages()
     QLocale eng("en");
     ui->langComboBox->addItem("English (en)", "en");
 
-    const auto entries = QDir(":/i18n/").entryList();
+    const auto entries = SettingsManager::translationsDir().entryList(
+            { QStringLiteral("qview_*.qm") }, QDir::Files);
     for (auto entry : entries) {
         entry.remove(0, 6);
         entry.remove(entry.length() - 3, 3);

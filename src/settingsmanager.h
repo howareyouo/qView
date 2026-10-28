@@ -3,6 +3,7 @@
 
 #include <QVariant>
 #include <QVector>
+#include <QDir>
 
 class SettingsManager : public QObject
 {
@@ -59,6 +60,10 @@ public:
     };
 
     explicit SettingsManager(QObject *parent = nullptr);
+
+    // Returns the "translations" folder next to the executable that
+    // language files (qview_*.qm) are loaded from.
+    static QDir translationsDir();
 
     QString getSystemLanguage() const;
 

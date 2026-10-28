@@ -71,9 +71,14 @@ SettingsManager::SettingsManager(QObject *parent) : QObject(parent)
     loadTranslation();
 }
 
+QDir SettingsManager::translationsDir()
+{
+    return QDir(QCoreApplication::applicationDirPath() + QStringLiteral("/translations"));
+}
+
 QString SettingsManager::getSystemLanguage() const
 {
-    auto entries = QDir(":/i18n/").entryList();
+    auto entries = translationsDir().entryList({ QStringLiteral("qview_*.qm") }, QDir::Files);
     entries.prepend("qview_en.ts");
     const auto centries = entries;
 
@@ -106,7 +111,7 @@ bool SettingsManager::loadTranslation() const
         return true;
 
     QTranslator *translator = new QTranslator();
-    bool success = translator->load("qview_" + lang + ".qm", QLatin1String(":/i18n"));
+    bool success = translator->load("qview_" + lang + ".qm", translationsDir().path());
     if (success) {
         qInfo() << "Loaded translation" << lang;
         QCoreApplication::installTranslator(translator);
