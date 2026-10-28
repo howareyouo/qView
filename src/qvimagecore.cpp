@@ -387,14 +387,14 @@ QVImageCore::FolderScanParams QVImageCore::makeFolderScanParams(const QString &d
 void QVImageCore::requestCaching(const QColorSpace &targetColorSpace)
 {
     int preloadingMode = qvGetSettingInt(SettingsManager::Setting::PreloadingMode);
-    if (preloadingMode == 0) {
+    if (preloadingMode == SettingsManager::PreloadingDisabled) {
         QVImageCore::imageCache.clear();
         return;
     }
 
     int preloadingDistance = 1;
 
-    if (preloadingMode > 1)
+    if (preloadingMode > SettingsManager::PreloadingAdjacent)
         preloadingDistance = 4;
 
     QStringList filesToPreload;
@@ -532,10 +532,11 @@ QString QVImageCore::getPixmapCacheKey(const QString &absoluteFilePath, const qi
 
 QColorSpace QVImageCore::getTargetColorSpace() const
 {
-    return colorSpaceConversion == 1    ? detectDisplayColorSpace()
-            : colorSpaceConversion == 2 ? QColorSpace::SRgb
-            : colorSpaceConversion == 3 ? QColorSpace::DisplayP3
-                                        : QColorSpace();
+    return colorSpaceConversion == SettingsManager::ColorSpaceAutoDetect
+            ? detectDisplayColorSpace()
+            : colorSpaceConversion == SettingsManager::ColorSpaceSRgb ? QColorSpace::SRgb
+            : colorSpaceConversion == SettingsManager::ColorSpaceDisplayP3 ? QColorSpace::DisplayP3
+                                                                           : QColorSpace();
 }
 
 QColorSpace QVImageCore::detectDisplayColorSpace() const
@@ -657,15 +658,15 @@ void QVImageCore::settingsUpdated()
     // preloading mode
     // Cost is in KiB
     switch (qvGetSettingInt(SettingsManager::Setting::PreloadingMode)) {
-    case 0: {
+    case SettingsManager::PreloadingDisabled: {
         QVImageCore::imageCache.setMaxCost(0);
         break;
     }
-    case 1: {
+    case SettingsManager::PreloadingAdjacent: {
         QVImageCore::imageCache.setMaxCost(256000);
         break;
     }
-    case 2: {
+    case SettingsManager::PreloadingExtended: {
         QVImageCore::imageCache.setMaxCost(2048000);
         break;
     }

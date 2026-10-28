@@ -92,9 +92,9 @@ void FileOperations::deleteFile(MainWindow &window, bool permanent)
 
     const auto afterDelete =
             qvApp->getSettingsManager().getInt(SettingsManager::Setting::AfterDelete);
-    if (afterDelete > 1)
+    if (afterDelete > SettingsManager::AfterDeleteDoNothing)
         window.view().goToFile(QVGraphicsView::GoToFileMode::next);
-    else if (afterDelete < 1)
+    else if (afterDelete < SettingsManager::AfterDeleteDoNothing)
         window.view().goToFile(QVGraphicsView::GoToFileMode::previous);
 
     if (!trashFilePath.isEmpty())

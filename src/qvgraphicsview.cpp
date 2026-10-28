@@ -286,7 +286,8 @@ void QVGraphicsView::wheelEvent(QWheelEvent *event)
     const QPoint eventPos = event->position().toPoint();
 
     const bool modifierPressed = event->modifiers().testFlag(Qt::ControlModifier);
-    bool dontZoom = qvGetSettingInt(SettingsManager::Setting::ScrollZoom) == 2;
+    bool dontZoom = qvGetSettingInt(SettingsManager::Setting::ScrollZoom)
+            == SettingsManager::ScrollZoomsScroll;
     if (modifierPressed) {
         dontZoom = !dontZoom;
     }
@@ -297,7 +298,9 @@ void QVGraphicsView::wheelEvent(QWheelEvent *event)
             || event->device()->type() == QInputDevice::DeviceType::TouchScreen;
     // Real touchpads are likely to exhibit these characteristics in empirical testing
     touchDeviceDetected = touchDeviceDetected && event->phase() != Qt::NoScrollPhase;
-    if (touchDeviceDetected && qvGetSettingInt(SettingsManager::Setting::ScrollZoom) == 1) {
+    if (touchDeviceDetected
+        && qvGetSettingInt(SettingsManager::Setting::ScrollZoom)
+                == SettingsManager::ScrollZoomsAutoDetect) {
         // If this is a touch device, override setting
         dontZoom = !modifierPressed;
     }
@@ -491,7 +494,7 @@ bool QVGraphicsView::growWindowForZoom(qreal scaleFactor)
         return false;
 
     // Respect the user's choice of never resizing the window automatically
-    if (qvGetSettingInt(SettingsManager::Setting::WindowResizeMode) == 0)
+    if (qvGetSettingInt(SettingsManager::Setting::WindowResizeMode) == SettingsManager::WindowResizeNever)
         return false;
 
     // Only the fit scale may hand over to the window, otherwise the zoom that was already
@@ -851,14 +854,14 @@ void QVGraphicsView::fitInViewMarginless(const QRectF &rect)
     QSize adjustedImageSize = getCurrentFileDetails().loadedPixmapSize;
     QRectF adjustedBoundingRect = rect;
 
-    switch (qvGetSettingInt(SettingsManager::Setting::CropMode)) { // should be enum tbh
-    case 1: // only take into account height
+    switch (qvGetSettingInt(SettingsManager::Setting::CropMode)) {
+    case SettingsManager::CropHeight: // only take into account height
     {
         adjustedImageSize.setWidth(1);
         adjustedBoundingRect.setWidth(1);
         break;
     }
-    case 2: // only take into account width
+    case SettingsManager::CropWidth: // only take into account width
     {
         adjustedImageSize.setHeight(1);
         adjustedBoundingRect.setHeight(1);

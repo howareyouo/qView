@@ -156,7 +156,7 @@ void SettingsManager::setSetting(const QString &key, const QVariant &value)
     loadSettings();
 }
 
-// Enum-based access methods// Enum-based access methods
+// Enum-based access methods
 const SettingsManager::SettingData &SettingsManager::getSettingData(Setting setting) const
 {
     const int index = static_cast<int>(setting);

@@ -38,7 +38,7 @@ FolderScanner::getCompatibleFilesForDir(const QString &dirPath, int sortMode, bo
             }
         }
         QString mimeType;
-        if (!matched || sortMode == 4) {
+        if (!matched || sortMode == SettingsManager::SortByType) {
             mimeType = mimeDb.mimeTypeForFile(absoluteFilePath, mimeMatchMode).name();
             matched |= mimeTypes.contains(mimeType);
         }
@@ -50,10 +50,14 @@ FolderScanner::getCompatibleFilesForDir(const QString &dirPath, int sortMode, bo
 
         if (matched) {
             fileList.append({ absoluteFilePath, fileName,
-                              sortMode == 1 ? fileInfo.lastModified().toMSecsSinceEpoch() : 0,
-                              sortMode == 2 ? fileInfo.birthTime().toMSecsSinceEpoch() : 0,
-                              sortMode == 3 ? fileInfo.size() : 0,
-                              sortMode == 4 ? mimeType : QString() });
+                              sortMode == SettingsManager::SortByLastModified
+                                      ? fileInfo.lastModified().toMSecsSinceEpoch()
+                                      : 0,
+                              sortMode == SettingsManager::SortByDateCreated
+                                      ? fileInfo.birthTime().toMSecsSinceEpoch()
+                                      : 0,
+                              sortMode == SettingsManager::SortBySize ? fileInfo.size() : 0,
+                              sortMode == SettingsManager::SortByType ? mimeType : QString() });
         }
     }
 
@@ -80,7 +84,7 @@ FolderScanner::FolderScanInfo FolderScanner::scanFolder(const FolderScanParams &
     // Sorting. The comparison direction of each mode mirrors the original
     // per-mode implementations exactly.
     switch (params.sortMode) {
-    case 0: {
+    case SettingsManager::SortByName: {
         // Natural sorting
         QCollator collator;
         collator.setNumericMode(true);
@@ -91,7 +95,7 @@ FolderScanner::FolderScanInfo FolderScanner::scanFolder(const FolderScanParams &
                   });
         break;
     }
-    case 4: {
+    case SettingsManager::SortByType: {
         // Type
         QCollator collator;
         std::sort(fileList.begin(), fileList.end(),
@@ -101,15 +105,15 @@ FolderScanner::FolderScanInfo FolderScanner::scanFolder(const FolderScanParams &
                   });
         break;
     }
-    case 1:
-    case 2:
-    case 3: {
+    case SettingsManager::SortByLastModified:
+    case SettingsManager::SortByDateCreated:
+    case SettingsManager::SortBySize: {
         // Date modified / date created / size, all numeric keys
         const auto sortKey = [](int mode, const CompatibleFile &file) -> qint64 {
             switch (mode) {
-            case 1:
+            case SettingsManager::SortByLastModified:
                 return file.lastModified;
-            case 2:
+            case SettingsManager::SortByDateCreated:
                 return file.lastCreated;
             default:
                 return file.size;
@@ -124,7 +128,7 @@ FolderScanner::FolderScanInfo FolderScanner::scanFolder(const FolderScanParams &
                   });
         break;
     }
-    case 5:
+    case SettingsManager::SortRandomly:
         // Random
         std::shuffle(fileList.begin(), fileList.end(),
                      std::default_random_engine(scanInfo.randomSortSeed));

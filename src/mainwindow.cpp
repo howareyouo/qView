@@ -572,17 +572,19 @@ void MainWindow::updateWindowTitle()
     QString newString = "qView";
     if (getCurrentFileDetails().fileInfo.isFile()) {
         switch (qvApp->getSettingsManager().getInt(SettingsManager::Setting::TitleBarMode)) {
-        case 1: {
+        case SettingsManager::TitleBarFileName: {
             newString = getCurrentFileDetails().fileInfo.fileName();
             break;
         }
-        case 2: {
+        case SettingsManager::TitleBarIndexAndFileName:
+        case SettingsManager::TitleBarDetails: {
             newString = QString::number(getCurrentFileDetails().loadedIndexInFolder + 1);
             newString += "/" + QString::number(getCurrentFileDetails().folderFileInfoList.count());
             newString += " - " + getCurrentFileDetails().fileInfo.fileName();
 
-            // Mode 3 adds image details and a suffix
-            if (qvApp->getSettingsManager().getInt(SettingsManager::Setting::TitleBarMode) == 2)
+            // Details mode adds image details and a suffix
+            if (qvApp->getSettingsManager().getInt(SettingsManager::Setting::TitleBarMode)
+                == SettingsManager::TitleBarIndexAndFileName)
                 break;
 
             if (!getCurrentFileDetails().errorData.hasError) {
@@ -621,7 +623,9 @@ void MainWindow::setWindowSize()
     // check if the program is configured to resize the window
     int windowResizeMode =
             qvApp->getSettingsManager().getInt(SettingsManager::Setting::WindowResizeMode);
-    if (!(windowResizeMode == 2 || (windowResizeMode == 1 && justLaunchedWithImage)))
+    if (!(windowResizeMode == SettingsManager::WindowResizeAlways
+          || (windowResizeMode == SettingsManager::WindowResizeOnLaunch
+              && justLaunchedWithImage)))
         return;
 
     justLaunchedWithImage = false;

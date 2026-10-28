@@ -53,6 +53,61 @@ public:
     };
     Q_ENUM(Setting)
 
+    // Integer-valued settings, matching the numbers stored in QSettings
+    enum SortMode
+    {
+        SortByName = 0,
+        SortByLastModified,
+        SortByDateCreated,
+        SortBySize,
+        SortByType,
+        SortRandomly
+    };
+    enum CropMode
+    {
+        CropBoth = 0,
+        CropHeight,
+        CropWidth
+    };
+    enum TitleBarMode
+    {
+        TitleBarDefault = 0,
+        TitleBarFileName,
+        TitleBarIndexAndFileName,
+        TitleBarDetails
+    };
+    enum WindowResizeMode
+    {
+        WindowResizeNever = 0,
+        WindowResizeOnLaunch,
+        WindowResizeAlways
+    };
+    enum ScrollZoomMode
+    {
+        ScrollZoomsImage = 0,
+        ScrollZoomsAutoDetect,
+        ScrollZoomsScroll
+    };
+    enum ColorSpaceConversionMode
+    {
+        ColorSpaceNone = 0,
+        ColorSpaceAutoDetect,
+        ColorSpaceSRgb,
+        ColorSpaceDisplayP3
+    };
+    enum PreloadingMode
+    {
+        PreloadingDisabled = 0,
+        PreloadingAdjacent,
+        PreloadingExtended
+    };
+    enum AfterDeleteAction
+    {
+        AfterDeleteShowPrevious = 0,
+        AfterDeleteDoNothing,
+        AfterDeleteShowNext
+    };
+
     struct SettingData
     {
         QVariant defaultValue;
