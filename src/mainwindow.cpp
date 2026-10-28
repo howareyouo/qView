@@ -341,14 +341,13 @@ void MainWindow::paintEvent(QPaintEvent *event)
 void MainWindow::fullscreenChanged()
 {
     const bool isFullscreen = windowState().testFlag(Qt::WindowFullScreen);
-    const auto fullscreenActions =
-            qvApp->getActionManager().getAllClonesOfAction("fullscreen", this);
-    for (const auto &fullscreenAction : fullscreenActions) {
-        fullscreenAction->setText(isFullscreen ? tr("Exit F&ull Screen")
-                                               : tr("Enter F&ull Screen"));
-        fullscreenAction->setIcon(isFullscreen ? QIcon::fromTheme("view-restore")
-                                               : QIcon::fromTheme("view-fullscreen"));
-    }
+    const QString text = isFullscreen ? tr("Exit F&ull Screen") : tr("Enter F&ull Screen");
+    const QIcon icon = QIcon::fromTheme(isFullscreen ? "view-restore" : "view-fullscreen");
+    qvApp->getActionManager().forEachCloneOfAction(
+            "fullscreen", [&text, &icon](QAction *fullscreenAction) {
+                fullscreenAction->setText(text);
+                fullscreenAction->setIcon(icon);
+            }, this);
     ui->fullscreenLabel->setVisible(
             isFullscreen
             && qvApp->getSettingsManager().getBool(SettingsManager::Setting::FullScreenDetails));
@@ -391,9 +390,8 @@ void MainWindow::settingsUpdated()
     // frameless
     updateFrameless();
     const bool frameless = settingsManager.getBool(SettingsManager::Setting::Frameless);
-    for (const auto &action : qvApp->getActionManager().getAllInstancesOfAction("frameless")) {
-        action->setChecked(frameless);
-    }
+    qvApp->getActionManager().forEachInstanceOfAction(
+            "frameless", [frameless](QAction *action) { action->setChecked(frameless); });
 
     // titlebaralwaysdark/hidetitlebar
     QVPlatformFunctions::setVibrancy(settingsManager.getBool(SettingsManager::Setting::HideTitlebar),
@@ -509,8 +507,8 @@ void MainWindow::disableActions()
             break;
         }
 
-        for (const auto &clone : actionManager.getAllClonesOfAction(it.key(), this))
-            clone->setEnabled(enabled);
+        actionManager.forEachCloneOfAction(
+                it.key(), [enabled](QAction *clone) { clone->setEnabled(enabled); }, this);
     }
 
     const auto &openWithMenus = actionManager.getAllClonesOfMenu("openwith", this);
@@ -594,12 +592,11 @@ void MainWindow::updateWindowTitle()
             newString = QString::number(getCurrentFileDetails().loadedIndexInFolder + 1);
             newString += "/" + QString::number(getCurrentFileDetails().folderFileInfoList.count());
             newString += " - " + getCurrentFileDetails().fileInfo.fileName();
-            break;
-        }
-        case 3: {
-            newString = QString::number(getCurrentFileDetails().loadedIndexInFolder + 1);
-            newString += "/" + QString::number(getCurrentFileDetails().folderFileInfoList.count());
-            newString += " - " + getCurrentFileDetails().fileInfo.fileName();
+
+            // Mode 3 adds image details and a suffix
+            if (qvApp->getSettingsManager().getInt(SettingsManager::Setting::TitleBarMode) == 2)
+                break;
+
             if (!getCurrentFileDetails().errorData.hasError) {
                 newString += " - " + QString::number(getCurrentFileDetails().baseImageSize.width());
                 newString += "x" + QString::number(getCurrentFileDetails().baseImageSize.height());
@@ -788,8 +785,6 @@ void MainWindow::resetZoom()
 
 void MainWindow::saveFrameAs()
 {
-    QSettings settings;
-    settings.beginGroup("recents");
     if (!getCurrentFileDetails().isMovieLoaded)
         return;
 
@@ -797,7 +792,7 @@ void MainWindow::saveFrameAs()
         pause();
     }
     QFileDialog *saveDialog = new QFileDialog(this, tr("Save Frame As..."));
-    saveDialog->setDirectory(settings.value("lastFileDialogDir", QDir::homePath()).toString());
+    saveDialog->setDirectory(qvApp->getLastFileDialogDir());
     saveDialog->setNameFilters(qvApp->getNameFilterList());
     saveDialog->selectFile(getCurrentFileDetails().fileInfo.baseName() + "-"
                            + QString::number(graphicsView->getLoadedMovie().currentFrameNumber())
@@ -820,21 +815,16 @@ void MainWindow::pause()
     if (!getCurrentFileDetails().isMovieLoaded)
         return;
 
-    const auto pauseActions = qvApp->getActionManager().getAllClonesOfAction("pause", this);
-
-    if (graphicsView->getLoadedMovie().state() == QMovie::Running) {
-        graphicsView->setPaused(true);
-        for (const auto &pauseAction : pauseActions) {
-            pauseAction->setText(tr("Res&ume"));
-            pauseAction->setIcon(QIcon::fromTheme("media-playback-start"));
-        }
-    } else {
-        graphicsView->setPaused(false);
-        for (const auto &pauseAction : pauseActions) {
-            pauseAction->setText(tr("Pause"));
-            pauseAction->setIcon(QIcon::fromTheme("media-playback-pause"));
-        }
-    }
+    const bool isRunning = graphicsView->getLoadedMovie().state() == QMovie::Running;
+    graphicsView->setPaused(isRunning);
+    const QString text = isRunning ? tr("Res&ume") : tr("Pause");
+    const QIcon icon = QIcon::fromTheme(isRunning ? "media-playback-start"
+                                                  : "media-playback-pause");
+    qvApp->getActionManager().forEachCloneOfAction(
+            "pause", [&text, &icon](QAction *pauseAction) {
+                pauseAction->setText(text);
+                pauseAction->setIcon(icon);
+            }, this);
 }
 
 void MainWindow::nextFrame()

@@ -92,38 +92,33 @@ QList<OpenWith::OpenWithItem> OpenWith::getOpenWithItemsFromDesktopFiles(const Q
             QTextStream in(&file);
             QString line;
             while (in.readLineInto(&line)) {
-                if (line.startsWith("Name=", Qt::CaseInsensitive) && openWithItem.name.isEmpty()) {
-                    line.remove("Name=", Qt::CaseInsensitive);
-                    openWithItem.name = line;
-                } else if (line.startsWith("Icon=", Qt::CaseInsensitive)
+                const qsizetype equalsIndex = line.indexOf('=');
+                if (equalsIndex == -1)
+                    continue;
+
+                const QString key = line.left(equalsIndex);
+                const QString value = line.mid(equalsIndex + 1);
+
+                if (key.compare("Name", Qt::CaseInsensitive) == 0
+                    && openWithItem.name.isEmpty()) {
+                    openWithItem.name = value;
+                } else if (key.compare("Icon", Qt::CaseInsensitive) == 0
                            && openWithItem.icon.isNull()) {
-                    line.remove("Icon=", Qt::CaseInsensitive);
-                    openWithItem.iconName = line;
-                } else if (line.startsWith("Categories=", Qt::CaseInsensitive)
+                    openWithItem.iconName = value;
+                } else if (key.compare("Categories", Qt::CaseInsensitive) == 0
                            && openWithItem.categories.isEmpty()) {
-                    line.remove("Categories=", Qt::CaseInsensitive);
-                    openWithItem.categories = line.split(";");
-                } else if (line.startsWith("Exec=", Qt::CaseInsensitive)
+                    openWithItem.categories = value.split(";");
+                } else if (key.compare("Exec", Qt::CaseInsensitive) == 0
                            && openWithItem.exec.isEmpty()) {
-                    line.remove("Exec=", Qt::CaseInsensitive);
-                    QRegularExpression regExp;
-                    regExp.setPattern("%.*");
-                    line.remove(regExp);
-                    openWithItem.exec = line;
-                } else if (line.startsWith("MimeType=", Qt::CaseInsensitive)
+                    // Strip the field codes (e.g. %f) from the command line
+                    openWithItem.exec = QString(value).remove(QRegularExpression("%.*"));
+                } else if (key.compare("MimeType", Qt::CaseInsensitive) == 0
                            && mimeTypes.isEmpty()) {
-                    line.remove("MimeType=", Qt::CaseInsensitive);
-                    mimeTypes = line;
-                } else if (line.startsWith("NoDisplay=", Qt::CaseInsensitive)) {
-                    line.remove("NoDisplay=");
-                    if (!line.compare("true", Qt::CaseInsensitive)) {
+                    mimeTypes = value;
+                } else if (key.compare("NoDisplay", Qt::CaseInsensitive) == 0
+                           || key.compare("Hidden", Qt::CaseInsensitive) == 0) {
+                    if (value.compare("true", Qt::CaseInsensitive) == 0)
                         noDisplay = true;
-                    }
-                } else if (line.startsWith("Hidden=", Qt::CaseInsensitive)) {
-                    line.remove("Hidden=");
-                    if (!line.compare("true", Qt::CaseInsensitive)) {
-                        noDisplay = true;
-                    }
                 }
             }
             if ((mimeTypes.contains(mimeName, Qt::CaseInsensitive) || mimeName.isEmpty())

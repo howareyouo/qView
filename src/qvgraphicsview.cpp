@@ -132,9 +132,7 @@ void QVGraphicsView::mousePressEvent(QMouseEvent *event)
     if (event->button() == Qt::LeftButton && event->modifiers().testFlag(Qt::ControlModifier)
         && (window()->windowFlags().testFlag(Qt::FramelessWindowHint)
             || qvApp->getSettingsManager().getBool(SettingsManager::Setting::CtrlDragWindow))) {
-        const auto windowState = window()->windowState();
-        if (!windowState.testFlag(Qt::WindowFullScreen)
-            && !windowState.testFlag(Qt::WindowMaximized)) {
+        if (isWindowMovable()) {
             if (!startWindowMove()) {
                 startFallbackWindowMove();
             }
@@ -145,9 +143,7 @@ void QVGraphicsView::mousePressEvent(QMouseEvent *event)
     // A frameless window has no native resize border, so resize it from the edges of the view
     if (event->button() == Qt::LeftButton
         && window()->windowFlags().testFlag(Qt::FramelessWindowHint)) {
-        const auto windowState = window()->windowState();
-        if (!windowState.testFlag(Qt::WindowFullScreen)
-            && !windowState.testFlag(Qt::WindowMaximized)) {
+        if (isWindowMovable()) {
             const QPoint windowPos = viewport()->mapTo(window(), event->pos());
             const QSize windowSize = window()->size();
             const int resizeBorder = 6;
@@ -170,36 +166,35 @@ void QVGraphicsView::mousePressEvent(QMouseEvent *event)
     }
 
     // Check for titlebar region drag
-    if (event->button() == Qt::LeftButton) {
-        const auto windowState = window()->windowState();
-        if (!windowState.testFlag(Qt::WindowFullScreen)
-            && !windowState.testFlag(Qt::WindowMaximized)) {
+    if (event->button() == Qt::LeftButton && isWindowMovable()) {
 #ifdef COCOA_LOADED
-            // Check if click is in titlebar region
-            int titlebarHeight = QVCocoaFunctions::getTitlebarHeight(window()->windowHandle());
-            if (event->pos().y() <= titlebarHeight) {
-                if (!startWindowMove()) {
-                    startFallbackWindowMove();
-                }
-                return;
+        // Check if click is in titlebar region
+        int titlebarHeight = QVCocoaFunctions::getTitlebarHeight(window()->windowHandle());
+        if (event->pos().y() <= titlebarHeight) {
+            if (!startWindowMove()) {
+                startFallbackWindowMove();
             }
-#endif
+            return;
         }
+#endif
     }
 
     // A fitted image leaves nothing to scroll, so a left drag moves the window instead of
     // silently doing nothing
-    if (event->button() == Qt::LeftButton && !hasPannableArea()) {
-        const auto windowState = window()->windowState();
-        if (!windowState.testFlag(Qt::WindowFullScreen)
-            && !windowState.testFlag(Qt::WindowMaximized)) {
-            startFallbackWindowMove();
-            event->accept();
-            return;
-        }
+    if (event->button() == Qt::LeftButton && !hasPannableArea() && isWindowMovable()) {
+        startFallbackWindowMove();
+        event->accept();
+        return;
     }
 
     QGraphicsView::mousePressEvent(event);
+}
+
+bool QVGraphicsView::isWindowMovable() const
+{
+    const auto windowState = window()->windowState();
+    return !windowState.testFlag(Qt::WindowFullScreen)
+            && !windowState.testFlag(Qt::WindowMaximized);
 }
 
 bool QVGraphicsView::hasPannableArea() const
@@ -599,13 +594,8 @@ void QVGraphicsView::restoreWindowSize()
 void QVGraphicsView::scaleExpensively()
 {
     // Determine if mirrored or flipped
-    bool mirrored = false;
-    if (transform().m11() < 0)
-        mirrored = true;
-
-    bool flipped = false;
-    if (transform().m22() < 0)
-        flipped = true;
+    bool mirrored = transform().m11() < 0;
+    bool flipped = transform().m22() < 0;
 
     // If we are above maximum scaling size
     if ((currentScale >= MAX_EXPENSIVE_SCALING_SIZE)
@@ -621,42 +611,19 @@ void QVGraphicsView::scaleExpensively()
             absoluteTransform.mapRect(QRectF({}, getCurrentFileDetails().loadedPixmapSize));
     const QSizeF mappedPixmapSize = mappedRect.size() * devicePixelRatioF();
 
-    // Undo mirror/flip before new transform
-    if (mirrored)
-        scale(-1, 1);
-
-    if (flipped)
-        scale(1, -1);
-
-    // Set image to scaled version
+    // Set image to scaled version, restoring mirror/flip with the new transform
     loadedPixmapItem->setPixmap(imageCore.scaleExpensively(mappedPixmapSize));
 
-    // Reset transformation
-    setTransform(
+    setOrientedTransform(
+            mirrored, flipped,
             QTransform::fromScale(qPow(devicePixelRatioF(), -1), qPow(devicePixelRatioF(), -1)));
-
-    // Redo mirror/flip after new transform
-    if (mirrored)
-        scale(-1, 1);
-
-    if (flipped)
-        scale(1, -1);
-
-    // Set zoombasis
-    zoomBasis = transform();
-    zoomBasisScaleFactor = 1.0;
 }
 
 void QVGraphicsView::makeUnscaled()
 {
     // Determine if mirrored or flipped
-    bool mirrored = false;
-    if (transform().m11() < 0)
-        mirrored = true;
-
-    bool flipped = false;
-    if (transform().m22() < 0)
-        flipped = true;
+    bool mirrored = transform().m11() < 0;
+    bool flipped = transform().m22() < 0;
 
     // Return to original size
     if (getCurrentFileDetails().isMovieLoaded)
@@ -664,16 +631,17 @@ void QVGraphicsView::makeUnscaled()
     else
         loadedPixmapItem->setPixmap(getLoadedPixmap());
 
-    setTransform(absoluteTransform);
+    setOrientedTransform(mirrored, flipped, absoluteTransform);
+}
 
-    // Redo mirror/flip after new transform
+void QVGraphicsView::setOrientedTransform(bool mirrored, bool flipped, const QTransform &base)
+{
+    setTransform(base);
     if (mirrored)
         scale(-1, 1);
-
     if (flipped)
         scale(1, -1);
 
-    // Reset transformation
     zoomBasis = transform();
     zoomBasisScaleFactor = 1.0;
 }

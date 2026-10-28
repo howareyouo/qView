@@ -101,11 +101,8 @@ void QVApplication::openFile(const QString &file, bool resize)
 
 void QVApplication::pickFile(MainWindow *parent)
 {
-    QSettings settings;
-    settings.beginGroup("recents");
-
     auto *fileDialog = new QFileDialog(parent, tr("Open..."));
-    fileDialog->setDirectory(settings.value("lastFileDialogDir", QDir::homePath()).toString());
+    fileDialog->setDirectory(getLastFileDialogDir());
     fileDialog->setFileMode(QFileDialog::ExistingFiles);
     fileDialog->setNameFilters(qvApp->getNameFilterList());
     if (parent)
@@ -123,12 +120,23 @@ void QVApplication::pickFile(MainWindow *parent)
                     isFirstLoop = false;
                 }
 
-                // Set lastFileDialogDir
-                QSettings settings;
-                settings.beginGroup("recents");
-                settings.setValue("lastFileDialogDir", QFileInfo(selected.constFirst()).path());
+                setLastFileDialogDir(QFileInfo(selected.constFirst()).path());
             });
     fileDialog->show();
+}
+
+QString QVApplication::getLastFileDialogDir()
+{
+    QSettings settings;
+    settings.beginGroup("recents");
+    return settings.value("lastFileDialogDir", QDir::homePath()).toString();
+}
+
+void QVApplication::setLastFileDialogDir(const QString &dir)
+{
+    QSettings settings;
+    settings.beginGroup("recents");
+    settings.setValue("lastFileDialogDir", dir);
 }
 
 MainWindow *QVApplication::newWindow()

@@ -6,22 +6,20 @@
 
 void SlideshowController::toggle(MainWindow &window)
 {
-    const auto slideshowActions =
-            qvApp->getActionManager().getAllClonesOfAction("slideshow", &window);
-
-    if (timer.isActive()) {
+    if (timer.isActive())
         timer.stop();
-        for (const auto &slideshowAction : slideshowActions) {
-            slideshowAction->setText(window.tr("Start S&lideshow"));
-            slideshowAction->setIcon(QIcon::fromTheme("media-playback-start"));
-        }
-    } else {
+    else
         timer.start();
-        for (const auto &slideshowAction : slideshowActions) {
-            slideshowAction->setText(window.tr("Stop S&lideshow"));
-            slideshowAction->setIcon(QIcon::fromTheme("media-playback-stop"));
-        }
-    }
+
+    const bool running = timer.isActive();
+    const QString text = window.tr(running ? "Stop S&lideshow" : "Start S&lideshow");
+    const QIcon icon = QIcon::fromTheme(running ? "media-playback-stop" : "media-playback-start");
+
+    qvApp->getActionManager().forEachCloneOfAction(
+            "slideshow", [&text, &icon](QAction *slideshowAction) {
+                slideshowAction->setText(text);
+                slideshowAction->setIcon(icon);
+            }, &window);
 }
 
 void SlideshowController::cancel(MainWindow &window)

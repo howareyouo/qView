@@ -38,6 +38,10 @@ public:
 
     static void pickUrl(MainWindow *parnet = nullptr);
 
+    static QString getLastFileDialogDir();
+
+    static void setLastFileDialogDir(const QString &dir);
+
     static MainWindow *newWindow();
 
     MainWindow *getMainWindow(bool shouldBeEmpty);

@@ -24,12 +24,9 @@ void ShortcutManager::updateShortcuts()
     // Set all action shortcuts now that the shortcuts have changed
     const auto &actionManager = qvApp->getActionManager();
     for (const auto &shortcut : getShortcutsList()) {
-        const auto actionList = actionManager.getAllInstancesOfAction(shortcut.name);
-
-        for (const auto &action : actionList) {
-            if (action)
-                action->setShortcuts(stringListToKeySequenceList(shortcut.shortcuts));
-        }
+        actionManager.forEachInstanceOfAction(shortcut.name, [&shortcut](QAction *action) {
+            action->setShortcuts(stringListToKeySequenceList(shortcut.shortcuts));
+        });
     }
 
     emit shortcutsUpdated();

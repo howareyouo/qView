@@ -112,8 +112,12 @@ private slots:
 private:
     void updateFilteringMode();
 
+    void setOrientedTransform(bool mirrored, bool flipped, const QTransform &base);
+
     bool growWindowForZoom(qreal scaleFactor);
     bool shrinkWindowForZoom(qreal scaleFactor);
+
+    bool isWindowMovable() const;
 
     bool hasPannableArea() const;
 

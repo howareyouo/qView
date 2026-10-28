@@ -110,6 +110,26 @@ QList<QAction *> ActionManager::getAllClonesOfAction(const QString &key, QWidget
     return listOfChildActions;
 }
 
+void ActionManager::forEachCloneOfAction(const QString &key,
+                                         const std::function<void(QAction *)> &func,
+                                         QWidget *parent) const
+{
+    const auto cloneList = getAllClonesOfAction(key, parent);
+    for (auto *action : cloneList)
+        func(action);
+}
+
+void ActionManager::forEachInstanceOfAction(const QString &key,
+                                            const std::function<void(QAction *)> &func) const
+{
+    if (auto *action = getAction(key))
+        func(action);
+
+    const auto cloneList = getAllClonesOfAction(key);
+    for (auto *action : cloneList)
+        func(action);
+}
+
 QList<QMenu *> ActionManager::getAllClonesOfMenu(const QString &key) const
 {
     return menuCloneLibrary.values(key);
@@ -153,10 +173,7 @@ void ActionManager::untrackClonedActions(const QMenuBar *menuBar)
 
 void ActionManager::hideAllInstancesOfAction(const QString &key)
 {
-    auto actions = getAllInstancesOfAction(key);
-    for (auto &action : actions) {
-        action->setVisible(false);
-    }
+    forEachInstanceOfAction(key, [](QAction *action) { action->setVisible(false); });
 }
 
 QMenuBar *ActionManager::buildMenuBar(QWidget *parent)

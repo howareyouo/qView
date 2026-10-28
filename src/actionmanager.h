@@ -5,6 +5,8 @@
 #include <QMenuBar>
 #include <QMultiHash>
 
+#include <functional>
+
 class MainWindow;
 
 class ActionManager : public QObject
@@ -96,6 +98,12 @@ public:
     QList<QAction *> getAllClonesOfAction(const QString &key) const;
 
     QList<QAction *> getAllClonesOfAction(const QString &key, QWidget *parent) const;
+
+    void forEachCloneOfAction(const QString &key, const std::function<void(QAction *)> &func,
+                              QWidget *parent = nullptr) const;
+
+    void forEachInstanceOfAction(const QString &key,
+                                 const std::function<void(QAction *)> &func) const;
 
     QList<QMenu *> getAllClonesOfMenu(const QString &key) const;
 
