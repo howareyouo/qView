@@ -2,6 +2,7 @@
 #include "mainwindow.h"
 
 #include <QGuiApplication>
+#include <QMenuBar>
 #include <QScreen>
 #include <QVarLengthArray>
 

@@ -46,7 +46,7 @@ void FileOperations::askDeleteFile(MainWindow &window, bool permanent)
     if (!permanent)
         msgBox->setCheckBox(new QCheckBox(window.tr("Do not ask again")));
 
-    connect(msgBox, &QMessageBox::finished, &window, [&window, msgBox, permanent](int result) {
+    QObject::connect(msgBox, &QMessageBox::finished, &window, [&window, msgBox, permanent](int result) {
         if (result != QMessageBox::Yes)
             return;
 

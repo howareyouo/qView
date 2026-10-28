@@ -30,15 +30,15 @@ void UrlOpener::openUrl(MainWindow &window, const QUrl &url)
     progressDialog->setWindowTitle(window.tr("Open URL..."));
     progressDialog->open();
 
-    connect(progressDialog, &QProgressDialog::canceled, reply, [reply] { reply->abort(); });
+    QObject::connect(progressDialog, &QProgressDialog::canceled, reply, [reply] { reply->abort(); });
 
-    connect(reply, &QNetworkReply::downloadProgress, progressDialog,
+    QObject::connect(reply, &QNetworkReply::downloadProgress, progressDialog,
             [progressDialog](qreal bytesReceived, qreal bytesTotal) {
                 auto percent = (bytesReceived / bytesTotal) * 100;
                 progressDialog->setValue(qRound(percent));
             });
 
-    connect(reply, &QNetworkReply::finished, &window,
+    QObject::connect(reply, &QNetworkReply::finished, &window,
             [&window, progressDialog, reply] {
         if (reply->error()) {
             progressDialog->close();
@@ -57,7 +57,7 @@ void UrlOpener::openUrl(MainWindow &window, const QUrl &url)
                                   + ".XXXXXX.png");
 
         auto *saveFutureWatcher = new QFutureWatcher<bool>();
-        connect(saveFutureWatcher, &QFutureWatcher<bool>::finished, &window,
+        QObject::connect(saveFutureWatcher, &QFutureWatcher<bool>::finished, &window,
                 [&window, progressDialog, tempFile, saveFutureWatcher]() {
                     progressDialog->close();
                     if (saveFutureWatcher->result()) {
@@ -86,7 +86,7 @@ void UrlOpener::pickUrl(MainWindow &window)
     inputDialog->setLabelText(window.tr("URL of a supported image file:"));
     inputDialog->resize(350, inputDialog->height());
     inputDialog->setWindowFlag(Qt::WindowContextHelpButtonHint, false);
-    connect(inputDialog, &QInputDialog::finished, &window,
+    QObject::connect(inputDialog, &QInputDialog::finished, &window,
             [&window, inputDialog](int result) {
         if (result) {
             const auto url = QUrl(inputDialog->textValue());

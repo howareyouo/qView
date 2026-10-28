@@ -1,6 +1,7 @@
 #ifndef ACTIONMANAGER_H
 #define ACTIONMANAGER_H
 
+#include <QFileInfo>
 #include <QMenuBar>
 #include <QMultiHash>
 
