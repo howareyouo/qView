@@ -72,6 +72,15 @@ public:
         return recentsList;
     }
 
+    enum class EnableRule
+    {
+        PixmapLoaded,  // enabled when a pixmap is loaded
+        MovieLoaded,   // enabled when a movie is loaded
+        FolderLoaded,  // enabled when folder information is available
+        UndoAvailable, // enabled when a deletion can be undone
+        Always,        // enabled regardless of load state
+    };
+
     explicit ActionManager(QObject *parent = nullptr);
     ~ActionManager() override;
 
@@ -135,6 +144,8 @@ public:
 
     const QHash<QString, QAction *> &getActionLibrary() const { return actionLibrary; }
 
+    const QHash<QString, EnableRule> &getEnableRules() const { return actionEnableRules; }
+
     int getRecentsListMaxLength() const { return recentsListMaxLength; };
     int getOpenWithMaxLength() const { return openWithMaxLength; };
 
@@ -148,6 +159,8 @@ protected:
 
 private:
     QHash<QString, QAction *> actionLibrary;
+
+    QHash<QString, EnableRule> actionEnableRules;
 
     QMultiHash<QString, QAction *> actionCloneLibrary;
 

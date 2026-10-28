@@ -359,7 +359,7 @@ void MainWindow::settingsUpdated()
             ? QColor(settingsManager.getString(SettingsManager::Setting::BgColor))
             : QColor();
 
-    // Store the background color opacity (0-100%) in the color's alpha channel. The window is
+    // Store the background opacity (0-100%) in the color's alpha channel. The window is
     // already created translucent, so repainting is all it takes for the change to take effect.
     if (customBackgroundColor.isValid()) {
         const int bgColorAlpha =
@@ -468,32 +468,38 @@ void MainWindow::fileChanged()
 
 void MainWindow::disableActions()
 {
-    const auto &actionLibrary = qvApp->getActionManager().getActionLibrary();
-    for (const auto &action : actionLibrary) {
-        const auto &data = action->data().toStringList();
-        const auto &clonesOfAction =
-                qvApp->getActionManager().getAllClonesOfAction(data.first(), this);
+    using EnableRule = ActionManager::EnableRule;
 
-        // Enable this window's actions when a file is loaded
-        if (data.last().contains("disable")) {
-            for (const auto &clone : clonesOfAction) {
-                const auto &cloneData = clone->data().toStringList();
-                if (cloneData.last() == "disable") {
-                    clone->setEnabled(getCurrentFileDetails().isPixmapLoaded);
-                } else if (cloneData.last() == "gifdisable") {
-                    clone->setEnabled(getCurrentFileDetails().isMovieLoaded);
-                } else if (cloneData.last() == "undodisable") {
-                    clone->setEnabled(fileOperations.canUndo());
-                } else if (cloneData.last() == "folderdisable") {
-                    clone->setEnabled(!getCurrentFileDetails().folderFileInfoList.isEmpty());
-                } else if (cloneData.last() == "windowdisable") {
-                    clone->setEnabled(true);
-                }
-            }
+    const auto &actionManager = qvApp->getActionManager();
+    const auto &enableRules = actionManager.getEnableRules();
+    for (auto it = enableRules.constBegin(); it != enableRules.constEnd(); ++it) {
+        bool enabled;
+        switch (it.value()) {
+        case EnableRule::PixmapLoaded:
+            enabled = getCurrentFileDetails().isPixmapLoaded;
+            break;
+        case EnableRule::MovieLoaded:
+            enabled = getCurrentFileDetails().isMovieLoaded;
+            break;
+        case EnableRule::FolderLoaded:
+            enabled = !getCurrentFileDetails().folderFileInfoList.isEmpty();
+            break;
+        case EnableRule::UndoAvailable:
+            enabled = fileOperations.canUndo();
+            break;
+        case EnableRule::Always:
+            enabled = true;
+            break;
+        default:
+            enabled = false;
+            break;
         }
+
+        for (const auto &clone : actionManager.getAllClonesOfAction(it.key(), this))
+            clone->setEnabled(enabled);
     }
 
-    const auto &openWithMenus = qvApp->getActionManager().getAllClonesOfMenu("openwith", this);
+    const auto &openWithMenus = actionManager.getAllClonesOfMenu("openwith", this);
     for (const auto &menu : openWithMenus) {
         menu->setEnabled(getCurrentFileDetails().isPixmapLoaded);
     }

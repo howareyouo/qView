@@ -701,6 +701,21 @@ void ActionManager::actionTriggered(QAction *triggeredAction, MainWindow *releva
     }
 }
 
+namespace {
+ActionManager::EnableRule enableRuleFromTag(const QString &tag)
+{
+    if (tag == "gifdisable")
+        return ActionManager::EnableRule::MovieLoaded;
+    if (tag == "folderdisable")
+        return ActionManager::EnableRule::FolderLoaded;
+    if (tag == "undodisable")
+        return ActionManager::EnableRule::UndoAvailable;
+    if (tag == "windowdisable")
+        return ActionManager::EnableRule::Always;
+    return ActionManager::EnableRule::PixmapLoaded;
+}
+} // namespace
+
 void ActionManager::initializeActionLibrary()
 {
     struct ActionDefinition
@@ -1019,8 +1034,10 @@ void ActionManager::initializeActionLibrary()
         data.prepend(definition.key);
         action->setData(data);
 
-        if (data.last().contains("disable"))
+        if (data.last().contains("disable")) {
             action->setEnabled(false);
+            actionEnableRules.insert(definition.key, enableRuleFromTag(data.last()));
+        }
 
         actionLibrary.insert(definition.key, action);
     }
