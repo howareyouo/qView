@@ -23,6 +23,7 @@ public:
         MinWindowResizedPercentage,
         MaxWindowResizedPercentage,
         HideTitlebar,
+        Frameless,
         ForceDarkMode,
         QuitOnLastWindow,
         MenuBarEnabled,

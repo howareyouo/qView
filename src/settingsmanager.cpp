@@ -27,6 +27,7 @@ static const SettingDefinition settingDefinitions[] = {
     { SettingsManager::Setting::MinWindowResizedPercentage, 20, "minwindowresizedpercentage" },
     { SettingsManager::Setting::MaxWindowResizedPercentage, 70, "maxwindowresizedpercentage" },
     { SettingsManager::Setting::HideTitlebar, false, "hidetitlebar" },
+    { SettingsManager::Setting::Frameless, false, "frameless" },
     { SettingsManager::Setting::ForceDarkMode, true, "forcedarkmode" },
     { SettingsManager::Setting::QuitOnLastWindow, false, "quitonlastwindow" },
     { SettingsManager::Setting::MenuBarEnabled, false, "menubarenabled" },

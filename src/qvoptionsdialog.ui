@@ -342,6 +342,16 @@
             </property>
            </widget>
           </item>
+          <item row="16" column="1">
+           <widget class="QCheckBox" name="framelessCheckbox">
+            <property name="toolTip">
+             <string>Hide the window titlebar and border. Use %1 + drag to move the window</string>
+            </property>
+            <property name="text">
+             <string>Frameless window</string>
+            </property>
+           </widget>
+          </item>
          </layout>
         </widget>
        </widget>

@@ -134,9 +134,9 @@ void QVGraphicsView::mousePressEvent(QMouseEvent *event)
     };
 
     // Check for Ctrl/Cmd drag
-    if (event->button() == Qt::LeftButton &&
-        event->modifiers().testFlag(Qt::ControlModifier) &&
-        qvApp->getSettingsManager().getBool(SettingsManager::Setting::CtrlDragWindow)) {
+    if (event->button() == Qt::LeftButton && event->modifiers().testFlag(Qt::ControlModifier)
+        && (window()->windowFlags().testFlag(Qt::FramelessWindowHint)
+            || qvApp->getSettingsManager().getBool(SettingsManager::Setting::CtrlDragWindow))) {
         const auto windowState = window()->windowState();
         if (!windowState.testFlag(Qt::WindowFullScreen)
             && !windowState.testFlag(Qt::WindowMaximized)) {
@@ -146,6 +146,35 @@ void QVGraphicsView::mousePressEvent(QMouseEvent *event)
             return;
         }
     }
+
+#if QT_VERSION >= QT_VERSION_CHECK(5, 15, 0)
+    // A frameless window has no native resize border, so resize it from the edges of the view
+    if (event->button() == Qt::LeftButton
+        && window()->windowFlags().testFlag(Qt::FramelessWindowHint)) {
+        const auto windowState = window()->windowState();
+        if (!windowState.testFlag(Qt::WindowFullScreen)
+            && !windowState.testFlag(Qt::WindowMaximized)) {
+            const QPoint windowPos = viewport()->mapTo(window(), event->pos());
+            const QSize windowSize = window()->size();
+            const int resizeBorder = 6;
+
+            Qt::Edges edges;
+            if (windowPos.x() <= resizeBorder)
+                edges |= Qt::LeftEdge;
+            else if (windowPos.x() >= windowSize.width() - resizeBorder - 1)
+                edges |= Qt::RightEdge;
+            if (windowPos.y() <= resizeBorder)
+                edges |= Qt::TopEdge;
+            else if (windowPos.y() >= windowSize.height() - resizeBorder - 1)
+                edges |= Qt::BottomEdge;
+
+            if (edges != Qt::Edges()) {
+                window()->windowHandle()->startSystemResize(edges);
+                return;
+            }
+        }
+    }
+#endif
 
     // Check for titlebar region drag
     if (event->button() == Qt::LeftButton) {

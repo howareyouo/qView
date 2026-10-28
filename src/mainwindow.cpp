@@ -353,6 +353,9 @@ void MainWindow::settingsUpdated()
 #endif
     menuBar()->setVisible(menuBarEnabled);
 
+    // frameless
+    updateFrameless();
+
 #ifdef COCOA_LOADED
     // titlebaralwaysdark/hidetitlebar
     QVCocoaFunctions::setVibrancy(
@@ -375,6 +378,30 @@ void MainWindow::settingsUpdated()
 
     // repaint in case background color changed
     update();
+}
+
+void MainWindow::updateFrameless()
+{
+#ifndef Q_OS_MACOS
+    const bool frameless = qvApp->getSettingsManager().getBool(SettingsManager::Setting::Frameless);
+    if (frameless == windowFlags().testFlag(Qt::FramelessWindowHint))
+        return;
+
+    // setWindowFlag() hides the window, so restore the state it had afterwards
+    const Qt::WindowStates state = windowState();
+    const bool wasVisible = isVisible();
+    setWindowFlag(Qt::FramelessWindowHint, frameless);
+
+    if (!wasVisible)
+        return;
+
+    if (state.testFlag(Qt::WindowFullScreen))
+        showFullScreen();
+    else if (state.testFlag(Qt::WindowMaximized))
+        showMaximized();
+    else
+        show();
+#endif
 }
 
 void MainWindow::shortcutsUpdated()

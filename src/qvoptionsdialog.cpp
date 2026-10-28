@@ -18,6 +18,7 @@ QVOptionsDialog::QVOptionsDialog(QWidget *parent) : QDialog(parent), ui(new Ui::
     QString ctrlString = QKeySequence(Qt::ControlModifier).toString().remove('+');
     ui->ctrlDragCheckbox->setText(ui->ctrlDragCheckbox->text().arg(ctrlString));
     ui->ctrlDragCheckbox->setToolTip(ui->ctrlDragCheckbox->toolTip().arg(ctrlString));
+    ui->framelessCheckbox->setToolTip(ui->framelessCheckbox->toolTip().arg(ctrlString));
 
     languageRestartMessageShown = false;
 
@@ -69,6 +70,7 @@ QVOptionsDialog::QVOptionsDialog(QWidget *parent) : QDialog(parent), ui(new Ui::
 // Platform specific settings
 #ifdef Q_OS_MACOS
     ui->menubarCheckbox->hide();
+    ui->framelessCheckbox->hide();
 #else
     ui->forceDarkModeCheckbox->hide();
     ui->hideTitlebarCheckbox->hide();
@@ -188,6 +190,8 @@ void QVOptionsDialog::syncSettings(bool defaults, bool makeConnections)
     syncCheckbox(ui->quitOnLastWindowCheckbox, "quitonlastwindow", defaults, makeConnections);
     // ctrldragwindow
     syncCheckbox(ui->ctrlDragCheckbox, "ctrldragwindow", defaults, makeConnections);
+    // frameless
+    syncCheckbox(ui->framelessCheckbox, "frameless", defaults, makeConnections);
     // menubarenabled
     syncCheckbox(ui->menubarCheckbox, "menubarenabled", defaults, makeConnections);
     // fullscreendetails

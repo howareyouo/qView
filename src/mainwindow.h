@@ -156,6 +156,8 @@ protected:
 
     void fullscreenChanged();
 
+    void updateFrameless();
+
 protected slots:
     void settingsUpdated();
     void shortcutsUpdated();
