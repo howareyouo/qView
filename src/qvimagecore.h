@@ -163,6 +163,12 @@ private:
     int largestDimension;
 
     bool waitingOnLoad;
+
+    // Size in device pixels that preview decodes should target
+    QSize fitTargetSize;
+
+    // Files with a full-resolution decode currently running in the background
+    QStringList fullDecodeFilesInProgress;
 };
 
 #endif // QVIMAGECORE_H
