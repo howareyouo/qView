@@ -43,7 +43,7 @@
      <property name="spacing">
       <number>0</number>
      </property>
-     <item>
+     <item alignment="Qt::AlignTop">
       <widget class="QListWidget" name="categoryList">
        <property name="maximumSize">
         <size>
