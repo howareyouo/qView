@@ -116,6 +116,8 @@ protected:
 
     void changeEvent(QEvent *event) override;
 
+    void resizeEvent(QResizeEvent *event) override;
+
     void mousePressEvent(QMouseEvent *event) override;
 
     void mouseDoubleClickEvent(QMouseEvent *event) override;
@@ -123,6 +125,8 @@ protected:
     void paintEvent(QPaintEvent *event) override;
 
     void fullscreenChanged();
+
+    void updateFullscreenLabelGeometry();
 
     void updateFrameless();
 

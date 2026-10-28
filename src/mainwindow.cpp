@@ -54,8 +54,10 @@ MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent), ui(new Ui::MainWi
     graphicsView = new QVGraphicsView(this);
     centralWidget()->layout()->addWidget(graphicsView);
 
-    // Hide fullscreen label by default
+    // Make the fullscreen label a floating overlay above the image instead of a layout item
+    // that takes up height
     ui->fullscreenLabel->hide();
+    ui->fullscreenLabel->setAttribute(Qt::WA_TransparentForMouseEvents);
 
     // Connect graphicsview signals
     connect(graphicsView, &QVGraphicsView::fileChanged, this, &MainWindow::fileChanged);
@@ -206,11 +208,6 @@ void MainWindow::showEvent(QShowEvent *event)
     QTimer::singleShot(
             0, this, [this]() { QVPlatformFunctions::setFullSizeContentView(windowHandle(), true); });
 
-    if (!menuBar()->sizeHint().isEmpty()) {
-        ui->fullscreenLabel->setMargin(0);
-        ui->fullscreenLabel->setMinimumHeight(menuBar()->sizeHint().height());
-    }
-
     QMainWindow::showEvent(event);
 }
 
@@ -241,6 +238,23 @@ void MainWindow::changeEvent(QEvent *event)
     }
 
     QMainWindow::changeEvent(event);
+}
+
+void MainWindow::resizeEvent(QResizeEvent *event)
+{
+    updateFullscreenLabelGeometry();
+    QMainWindow::resizeEvent(event);
+}
+
+void MainWindow::updateFullscreenLabelGeometry()
+{
+    if (!ui->fullscreenLabel->isVisible())
+        return;
+
+    // Float the label over the image at the top of the window, below the titlebar area on macOS
+    ui->fullscreenLabel->setGeometry(0, getTitlebarOverlap(), width(),
+                                     ui->fullscreenLabel->sizeHint().height());
+    ui->fullscreenLabel->raise();
 }
 
 void MainWindow::mousePressEvent(QMouseEvent *event)
@@ -338,6 +352,7 @@ void MainWindow::fullscreenChanged()
     ui->fullscreenLabel->setVisible(
             isFullscreen
             && qvApp->getSettingsManager().getBool(SettingsManager::Setting::FullScreenDetails));
+    updateFullscreenLabelGeometry();
 }
 
 void MainWindow::openFile(const QString &fileName)
@@ -397,6 +412,7 @@ void MainWindow::settingsUpdated()
     ui->fullscreenLabel->setVisible(
             settingsManager.getBool(SettingsManager::Setting::FullScreenDetails)
             && windowState().testFlag(Qt::WindowFullScreen));
+    updateFullscreenLabelGeometry();
 
     setWindowSize();
 
