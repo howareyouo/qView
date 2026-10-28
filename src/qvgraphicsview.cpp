@@ -118,12 +118,12 @@ void QVGraphicsView::mousePressEvent(QMouseEvent *event)
 #ifdef COCOA_LOADED
         return QVCocoaFunctions::startSystemMove(window());
 #else
-#if QT_VERSION >= QT_VERSION_CHECK(5, 15, 0)
+#  if QT_VERSION >= QT_VERSION_CHECK(5, 15, 0)
         return window()->windowHandle()->startSystemMove();
-#else
+#  else
         Q_UNUSED(event)
         return false;
-#endif
+#  endif
 #endif
     };
 
@@ -313,7 +313,7 @@ void QVGraphicsView::wheelEvent(QWheelEvent *event)
     if (yDelta == 0)
         return;
 
-    const qreal zoomAmountPerWheelClick = qvGetSettingInt(ScaleFactor)/100.0;
+    const qreal zoomAmountPerWheelClick = qvGetSettingInt(ScaleFactor) / 100.0;
     qreal zoomFactor = zoomAmountPerWheelClick;
     if (qvGetSettingBool(FractionalZoom) || touchDeviceDetected) {
         const qreal fractionalWheelClicks = qFabs(yDelta) / yScale;
@@ -386,12 +386,12 @@ void QVGraphicsView::postLoad()
 
 void QVGraphicsView::zoomIn(const QPoint &pos)
 {
-    zoom(qvGetSettingInt(ScaleFactor)/100.0 + 1, pos);
+    zoom(qvGetSettingInt(ScaleFactor) / 100.0 + 1, pos);
 }
 
 void QVGraphicsView::zoomOut(const QPoint &pos)
 {
-    zoom(qPow(qvGetSettingInt(ScaleFactor)/100.0 + 1, -1), pos);
+    zoom(qPow(qvGetSettingInt(ScaleFactor) / 100.0 + 1, -1), pos);
 }
 
 void QVGraphicsView::zoom(qreal scaleFactor, const QPoint &pos)
@@ -644,8 +644,7 @@ void QVGraphicsView::goToFile(const GoToFileMode &mode, int index)
         if (fileList.size() > 1) {
             int randomIndex;
             do {
-                randomIndex = QRandomGenerator::global()->bounded(
-                        int(fileList.size()));
+                randomIndex = QRandomGenerator::global()->bounded(int(fileList.size()));
             } while (randomIndex == newIndex);
             newIndex = randomIndex;
         }

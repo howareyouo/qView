@@ -398,7 +398,8 @@ void QVApplication::ensureFontLoaded(const QString &path)
     loadedFontPaths.insert(path);
 }
 
-QIcon QVApplication::iconFromFont(const QString &fontFamily, const QChar &codePoint, const int pixelSize, const qreal pixelRatio)
+QIcon QVApplication::iconFromFont(const QString &fontFamily, const QChar &codePoint,
+                                  const int pixelSize, const qreal pixelRatio)
 {
     const int scaledPixelSize = qRound(pixelSize * pixelRatio);
 
