@@ -28,6 +28,18 @@ QVImageCore::QVImageCore(QObject *parent) : QObject(parent)
     connect(&loadFutureWatcher, &QFutureWatcher<ReadData>::finished, this,
             [this]() { loadPixmap(loadFutureWatcher.result()); });
 
+    connect(&folderInfoFutureWatcher, &QFutureWatcher<FolderScanInfo>::finished, this, [this]() {
+        const FolderScanInfo scanInfo = folderInfoFutureWatcher.result();
+        // The user may have navigated somewhere else while the scan was running, so only
+        // apply the results if the loaded file still lives in the scanned directory
+        if (currentFileDetails.fileInfo.path() != scanInfo.dirInfo.dirPath)
+            return;
+        currentFileDetails.folderFileInfoList = scanInfo.fileList;
+        lastDirInfo = scanInfo.dirInfo;
+        randomSortSeed = scanInfo.randomSortSeed;
+        currentFileDetails.updateLoadedIndexInFolder();
+    });
+
     largestDimension = 0;
     const auto screenList = QGuiApplication::screens();
     for (auto const &screen : screenList) {
@@ -312,6 +324,25 @@ void QVImageCore::updateFolderInfo(QString dirPath)
 
     // Set current file index variable
     currentFileDetails.updateLoadedIndexInFolder();
+}
+
+void QVImageCore::updateFolderInfoAsync(QString dirPath)
+{
+    if (dirPath.isEmpty()) {
+        dirPath = currentFileDetails.fileInfo.path();
+
+        // No directory specified and a file is not already loaded from which we can infer one
+        if (dirPath.isEmpty())
+            return;
+    }
+
+    // A scan is already in flight; its result will be applied once it finishes
+    if (folderInfoFutureWatcher.isRunning())
+        return;
+
+    const FolderScanParams params = makeFolderScanParams(dirPath);
+    folderInfoFutureWatcher.setFuture(
+            QtConcurrent::run([params] { return FolderScanner::scanFolder(params); }));
 }
 
 QVImageCore::FolderScanParams QVImageCore::makeFolderScanParams(const QString &dirPath) const

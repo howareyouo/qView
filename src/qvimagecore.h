@@ -78,6 +78,7 @@ public:
     void closeImage();
     QList<CompatibleFile> getCompatibleFiles(const QString &dirPath) const;
     void updateFolderInfo(QString dirPath = QString());
+    void updateFolderInfoAsync(QString dirPath = QString());
     void requestCaching(const QColorSpace &targetColorSpace);
     void requestCachingFile(const QString &filePath, const QColorSpace &targetColorSpace);
     void addToCache(const ReadData &&readImageAndFileInfo);
@@ -129,6 +130,7 @@ private:
     int currentRotation;
 
     QFutureWatcher<ReadData> loadFutureWatcher;
+    QFutureWatcher<FolderScanInfo> folderInfoFutureWatcher;
 
     int colorSpaceConversion;
 

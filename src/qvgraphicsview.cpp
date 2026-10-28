@@ -783,7 +783,7 @@ void QVGraphicsView::goToFile(const GoToFileMode &mode, int index)
         // track of our index within the folder. Use the static 'exists' method to avoid caching.
         // If we skip updating now, flag it for retry later once we locate a new file.
         if (QFile::exists(getCurrentFileDetails().fileInfo.absoluteFilePath()))
-            imageCore.updateFolderInfo();
+            imageCore.updateFolderInfoAsync();
         else
             shouldRetryFolderInfoUpdate = true;
     }
