@@ -108,11 +108,7 @@ void QVGraphicsView::dragLeaveEvent(QDragLeaveEvent *event)
     event->accept();
 }
 
-#if QT_VERSION < QT_VERSION_CHECK(6, 0, 0)
-void QVGraphicsView::enterEvent(QEvent *event)
-#else
 void QVGraphicsView::enterEvent(QEnterEvent *event)
-#endif
 {
     QGraphicsView::enterEvent(event);
     viewport()->setCursor(Qt::ArrowCursor);
@@ -127,11 +123,7 @@ void QVGraphicsView::mousePressEvent(QMouseEvent *event)
     const auto startFallbackWindowMove = [this, event]() {
         mousePressButton = event->button();
         mousePressModifiers = event->modifiers();
-#if QT_VERSION >= QT_VERSION_CHECK(6, 0, 0)
         mousePressPosition = event->globalPosition().toPoint();
-#else
-        mousePressPosition = event->globalPos();
-#endif
         windowMoveOffset = mousePressPosition - window()->pos();
         windowMoveStarted = false;
     };
@@ -150,7 +142,6 @@ void QVGraphicsView::mousePressEvent(QMouseEvent *event)
         }
     }
 
-#if QT_VERSION >= QT_VERSION_CHECK(5, 15, 0)
     // A frameless window has no native resize border, so resize it from the edges of the view
     if (event->button() == Qt::LeftButton
         && window()->windowFlags().testFlag(Qt::FramelessWindowHint)) {
@@ -177,7 +168,6 @@ void QVGraphicsView::mousePressEvent(QMouseEvent *event)
             }
         }
     }
-#endif
 
     // Check for titlebar region drag
     if (event->button() == Qt::LeftButton) {
@@ -238,11 +228,7 @@ void QVGraphicsView::mouseMoveEvent(QMouseEvent *event)
             return;
         }
 
-#if QT_VERSION >= QT_VERSION_CHECK(6, 0, 0)
         const QPoint globalPosition = event->globalPosition().toPoint();
-#else
-        const QPoint globalPosition = event->globalPos();
-#endif
         // Don't start moving the window on the press itself, or double clicking would be eaten
         if (!windowMoveStarted) {
             if ((globalPosition - mousePressPosition).manhattanLength()
@@ -292,11 +278,7 @@ bool QVGraphicsView::event(QEvent *event)
     } else if (event->type() == QEvent::NativeGesture) {
         auto *nativeEvent = static_cast<QNativeGestureEvent *>(event);
         if (nativeEvent->gestureType() == Qt::ZoomNativeGesture) {
-#if (QT_VERSION >= QT_VERSION_CHECK(6, 0, 0))
             const QPoint eventPos = nativeEvent->position().toPoint();
-#else
-            const QPoint eventPos = nativeEvent->pos();
-#endif
             zoom(nativeEvent->value() + 1, eventPos);
             return true;
         }
@@ -306,11 +288,7 @@ bool QVGraphicsView::event(QEvent *event)
 
 void QVGraphicsView::wheelEvent(QWheelEvent *event)
 {
-#if (QT_VERSION >= QT_VERSION_CHECK(5, 14, 0))
     const QPoint eventPos = event->position().toPoint();
-#else
-    const QPoint eventPos = event->pos();
-#endif
 
     const bool modifierPressed = event->modifiers().testFlag(Qt::ControlModifier);
     bool dontZoom = qvGetSettingInt(SettingsManager::Setting::ScrollZoom) == 2;
@@ -319,7 +297,6 @@ void QVGraphicsView::wheelEvent(QWheelEvent *event)
     }
 
     bool touchDeviceDetected = false;
-#if QT_VERSION >= QT_VERSION_CHECK(6, 0, 0)
     // Auto-detect touchpad
     touchDeviceDetected = event->device()->type() == QInputDevice::DeviceType::TouchPad
             || event->device()->type() == QInputDevice::DeviceType::TouchScreen;
@@ -329,7 +306,6 @@ void QVGraphicsView::wheelEvent(QWheelEvent *event)
         // If this is a touch device, override setting
         dontZoom = !modifierPressed;
     }
-#endif
 
     if (dontZoom) {
         const qreal scrollDivisor = 2.0; // To make scrolling less sensitive

@@ -52,12 +52,6 @@ public:
 
     void updateShortcuts();
 
-    void hideShortcuts();
-
-    void setShortcutHidden(const QString &shortcut);
-
-    void setShortcutsHidden(const QStringList &shortcuts);
-
     const QList<SShortcut> &getShortcutsList() const { return shortcutsList; }
 
 signals:
@@ -68,8 +62,6 @@ protected:
 
 private:
     QList<SShortcut> shortcutsList;
-
-    QStringList hiddenShortcuts;
 };
 
 #endif // SHORTCUTMANAGER_H

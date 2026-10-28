@@ -7,7 +7,6 @@
 #include <QContextMenuEvent>
 #include <QFile>
 #include <QMenu>
-#include <QProcess>
 #include <QUrl>
 #include <QWidget>
 
@@ -63,11 +62,8 @@ bool QVPlatformFunctions::startSystemMove(QWidget *widget)
 {
 #ifdef COCOA_LOADED
     return QVCocoaFunctions::startSystemMove(widget);
-#elif (QT_VERSION >= QT_VERSION_CHECK(5, 15, 0))
-    return widget->windowHandle()->startSystemMove();
 #else
-    Q_UNUSED(widget)
-    return false;
+    return widget->windowHandle()->startSystemMove();
 #endif
 }
 
@@ -113,57 +109,12 @@ void QVPlatformFunctions::openWithInvokeAssocHandler(const QString &filePath,
 QVPlatformFunctions::TrashOutcome QVPlatformFunctions::moveToTrash(const QString &filePath,
                                                                    QString *trashedPath)
 {
-#if (QT_VERSION >= QT_VERSION_CHECK(5, 15, 0))
     QFile file(filePath);
     if (!file.moveToTrash())
         return TrashOutcome::Failure;
     if (trashedPath)
         *trashedPath = file.fileName();
     return TrashOutcome::Success;
-#elif defined(Q_OS_MACOS) && defined(COCOA_LOADED)
-    const QString trashedFile = QVCocoaFunctions::deleteFile(filePath);
-    if (trashedFile.isEmpty())
-        return TrashOutcome::Failure;
-    if (trashedPath)
-        *trashedPath = QUrl(trashedFile).toLocalFile(); // remove file:// protocol
-    return TrashOutcome::Success;
-#elif defined(Q_OS_UNIX) && !defined(Q_OS_MACOS)
-    const QString trashedFile = gioTrash(filePath, false);
-    if (trashedFile.isEmpty())
-        return TrashOutcome::Failure;
-    if (trashedPath)
-        *trashedPath = trashedFile;
-    return TrashOutcome::Success;
-#else
-    Q_UNUSED(filePath)
-    Q_UNUSED(trashedPath)
-    return TrashOutcome::Unsupported;
-#endif
-}
-
-QString QVPlatformFunctions::gioTrash(const QString &path, bool putBack)
-{
-    QStringList gioArgs = { "trash", path };
-    if (putBack)
-        gioArgs.insert(1, "--restore");
-
-    QProcess process;
-    process.start("gio", gioArgs);
-    process.waitForFinished();
-
-    if (process.error() != QProcess::FailedToStart && !putBack) {
-        process.start("gio", { "trash", "--list" });
-        process.waitForFinished();
-
-        const auto &output = QString(process.readAllStandardOutput()).split("\n");
-        for (const auto &line : output) {
-            if (line.contains(path))
-                return line.split("\t").at(0);
-        }
-    }
-
-    qWarning("Failed to use linux fallback delete");
-    return "";
 }
 
 QByteArray QVPlatformFunctions::getIccProfileForWindow(const QWindow *window)

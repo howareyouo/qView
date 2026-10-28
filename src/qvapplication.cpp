@@ -22,8 +22,8 @@ QVApplication::QVApplication(int &argc, char **argv) : QApplication(argc, argv)
     connect(&updateChecker, &UpdateChecker::checkedUpdates, this, &QVApplication::checkedUpdates);
 #endif // QV_DISABLE_ONLINE_VERSION_CHECK
 
-    // Add fallback fromTheme icon search on linux with qt >5.11
-#if defined Q_OS_UNIX && !defined Q_OS_MACOS && QT_VERSION >= QT_VERSION_CHECK(5, 11, 0)
+    // Add fallback fromTheme icon search on linux
+#if defined Q_OS_UNIX && !defined Q_OS_MACOS
     QIcon::setFallbackSearchPaths(QIcon::fallbackSearchPaths() << "/usr/share/pixmaps");
 #endif
 
@@ -65,8 +65,6 @@ QVApplication::QVApplication(int &argc, char **argv) : QApplication(argc, argv)
 #ifdef Q_OS_MACOS
     setQuitOnLastWindowClosed(getSettingsManager().getBool(SettingsManager::Setting::QuitOnLastWindow));
 #endif
-
-    hideIncompatibleActions();
 }
 
 QVApplication::~QVApplication()
@@ -283,35 +281,6 @@ void QVApplication::openAboutDialog(QWidget *parent)
     aboutDialog->show();
 }
 
-void QVApplication::hideIncompatibleActions()
-{
-    // Deletion actions
-#if (QT_VERSION < QT_VERSION_CHECK(5, 15, 0))
-    auto hideDeleteActions = [this] {
-        getActionManager().hideAllInstancesOfAction("delete");
-        getActionManager().hideAllInstancesOfAction("undo");
-
-        getShortcutManager().setShortcutsHidden({ "delete", "undo" });
-    };
-#  if defined Q_OS_UNIX && !defined Q_OS_MACOS
-    QProcess *testGio = new QProcess(this);
-    testGio->start("gio", QStringList());
-    connect(testGio, QOverload<int, QProcess::ExitStatus>::of(&QProcess::finished),
-            [hideDeleteActions, testGio, this]() {
-                if (testGio->error() == QProcess::FailedToStart) {
-                    qInfo() << "No backup gio trash backend found";
-                    hideDeleteActions();
-                } else {
-                    qInfo() << "Using backup gio trash backend";
-                }
-            });
-#  elif defined Q_OS_WIN || (defined Q_OS_MACOS && !COCOA_LOADED)
-    qInfo() << "Qt version too old for trash feature";
-    hideDeleteActions();
-#  endif
-#endif
-}
-
 void QVApplication::ensureFilterLists() const
 {
     // Built on first use instead of at startup. The first caller is the folder scan in the loading
@@ -353,9 +322,6 @@ QVApplication::FilterLists QVApplication::buildFilterLists()
         if (fileExtension == ".jpg") {
             addExtension(".jpe");
             addExtension(".jfi");
-#if QT_VERSION < QT_VERSION_CHECK(6, 8, 0)
-            addExtension(".jfif");
-#endif
         } else if (fileExtension == ".heic") {
             addExtension(".heics");
         } else if (fileExtension == ".heif") {

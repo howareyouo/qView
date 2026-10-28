@@ -18,8 +18,7 @@ public:
     enum class TrashOutcome
     {
         Success,
-        Failure,
-        Unsupported
+        Failure
     };
 
     static void showContextMenu(QMenu *menu, QContextMenuEvent *event, QWindow *window);
@@ -45,10 +44,6 @@ public:
     // Moves a file into the platform trash. Returns the outcome; on success trashedPath is
     // set to the file's new location inside the trash.
     static TrashOutcome moveToTrash(const QString &filePath, QString *trashedPath);
-
-    // Moves a file into (putBack = false) or out of (putBack = true) the trash with gio.
-    // Returns the file's path inside the trash, or an empty string on failure.
-    static QString gioTrash(const QString &path, bool putBack);
 
     static QByteArray getIccProfileForWindow(const QWindow *window);
 };

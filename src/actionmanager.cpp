@@ -529,15 +529,7 @@ void ActionManager::actionTriggered(QAction *triggeredAction, MainWindow *releva
         // Conditions that will work with a nullptr window passed
         { "quit",
           { false,
-            [](MainWindow *, QAction *) {
-#if QT_VERSION < QT_VERSION_CHECK(6, 0, 0)
-                // Workaround to allow for a graceful exit (e.g. fire window close events)
-                // since QCoreApplication::quit can't accomplish this prior to Qt 6
-                qGuiApp->postEvent(qGuiApp, new QEvent(QEvent::Quit));
-#else
-                QCoreApplication::quit();
-#endif
-            } } },
+            [](MainWindow *, QAction *) { QCoreApplication::quit(); } } },
         { "newwindow",
           { false, [](MainWindow *, QAction *) { qvApp->newWindow(); } } },
         { "open",

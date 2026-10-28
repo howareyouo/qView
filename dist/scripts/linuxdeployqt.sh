@@ -1,10 +1,11 @@
 #!/usr/bin/bash
 
-wget 'https://sourceforge.net/projects/qt5ct/files/latest/download'
+wget 'https://sourceforge.net/projects/qt6ct/files/latest/download'
 tar xf download
-cd qt5ct*
-qmake
-sudo make install
+cd qt6ct*
+cmake -B build -DCMAKE_BUILD_TYPE=Release
+cmake --build build -j"$(nproc)"
+sudo cmake --install build
 cd ..
 
 if [ -n "$1" ]; then
@@ -27,7 +28,7 @@ cp dist/linux/hicolor/scalable/apps/com.interversehq.qView.svg bin/appdir/
 cd bin
 rm qview
 export LD_LIBRARY_PATH=$LD_LIBRARY_PATH:/usr/local/lib/
-../linuxdeployqt-continuous-x86_64.AppImage appdir/usr/share/applications/com.interversehq.qView.desktop -appimage -updateinformation="gh-releases-zsync|jurplel|qView|latest|qView-*x86_64.AppImage.zsync" -extra-plugins=styles/libqt5ct-style.so,platformthemes/libqt5ct.so
+../linuxdeployqt-continuous-x86_64.AppImage appdir/usr/share/applications/com.interversehq.qView.desktop -appimage -updateinformation="gh-releases-zsync|jurplel|qView|latest|qView-*x86_64.AppImage.zsync" -extra-plugins=styles/libqt6ct-style.so,platformthemes/libqt6ct.so
 
 if [ -n "$1" ]; then
     mv *.AppImage qView-nightly-$1-x86_64.AppImage

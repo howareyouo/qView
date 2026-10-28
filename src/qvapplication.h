@@ -58,8 +58,6 @@ public:
 
     void openAboutDialog(QWidget *parent = nullptr);
 
-    void hideIncompatibleActions();
-
     struct FilterLists
     {
         QStringList nameFilterList;

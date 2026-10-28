@@ -52,13 +52,6 @@ QVOptionsDialog::QVOptionsDialog(QWidget *parent) : QDialog(parent), ui(new Ui::
     restoreGeometry(settings.value("optionsgeometry").toByteArray());
 #endif
 
-#if QT_VERSION < QT_VERSION_CHECK(6, 0, 0)
-    // Hide scroll zoom auto-detect option if unsupported
-    // TODO: This causes an issue with saving/loading settings
-    // between different Qt versions.
-    ui->scrollZoomsComboBox->removeItem(1);
-#endif
-
     if (QOperatingSystemVersion::current()
         < QOperatingSystemVersion(QOperatingSystemVersion::MacOS, 13)) {
         setWindowTitle("Preferences");
@@ -76,12 +69,6 @@ QVOptionsDialog::QVOptionsDialog(QWidget *parent) : QDialog(parent), ui(new Ui::
     ui->forceDarkModeCheckbox->hide();
     ui->hideTitlebarCheckbox->hide();
     ui->quitOnLastWindowCheckbox->hide();
-#endif
-
-// Hide color space conversion below 5.14, which is when color space support was introduced
-#if (QT_VERSION < QT_VERSION_CHECK(5, 14, 0))
-    ui->colorSpaceConversionComboBox->hide();
-    ui->colorSpaceConversionLabel->hide();
 #endif
 
     syncSettings(false, true);

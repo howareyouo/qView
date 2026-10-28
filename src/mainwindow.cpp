@@ -39,7 +39,7 @@ MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent), ui(new Ui::MainWi
     // instead of in settingsUpdated().
     setAttribute(Qt::WA_TranslucentBackground);
 
-#if defined COCOA_LOADED && QT_VERSION >= QT_VERSION_CHECK(6, 8, 0)
+#ifdef COCOA_LOADED
     // Allow the titlebar to overlap widgets with full size content view
     setAttribute(Qt::WA_ContentsMarginsRespectsSafeArea, false);
     centralWidget()->setAttribute(Qt::WA_ContentsMarginsRespectsSafeArea, false);

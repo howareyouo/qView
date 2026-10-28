@@ -80,13 +80,6 @@ void FileOperations::deleteFile(MainWindow &window, bool permanent)
         if (outcome == QVPlatformFunctions::TrashOutcome::Success) {
             success = true;
             trashFilePath = trashedPath;
-        } else if (outcome == QVPlatformFunctions::TrashOutcome::Unsupported) {
-            QMessageBox::critical(&window, window.tr("Not Supported"),
-                                  window.tr("This program was compiled with an old version of Qt "
-                                            "and this feature is not available.\n"
-                                            "If you see this message, please report a bug!"));
-
-            return;
         }
     }
 
@@ -119,7 +112,6 @@ void FileOperations::undoDelete(MainWindow &window)
     if (lastDeletedFile.pathInTrash.isEmpty() || lastDeletedFile.previousPath.isEmpty())
         return;
 
-#if (QT_VERSION >= QT_VERSION_CHECK(5, 15, 0)) || (defined Q_OS_MACOS && COCOA_LOADED)
     const QFileInfo fileInfo(lastDeletedFile.pathInTrash);
     if (!fileInfo.isWritable()) {
         QMessageBox::critical(&window,
@@ -135,17 +127,6 @@ void FileOperations::undoDelete(MainWindow &window)
         QMessageBox::critical(&window, window.tr("Error"),
                               window.tr("Failed undoing deletion of %1.").arg(fileInfo.fileName()));
     }
-#elif defined Q_OS_UNIX && !defined Q_OS_MACOS
-    QVPlatformFunctions::gioTrash(lastDeletedFile.pathInTrash, true);
-#else
-    QMessageBox::critical(&window, window.tr("Not Supported"),
-                          window.tr("This program was compiled with an old version of Qt and this "
-                                    "feature "
-                                    "is not available.\n"
-                                    "If you see this message, please report a bug!"));
-
-    return;
-#endif
 
     window.openFile(lastDeletedFile.previousPath);
     window.disableActions();

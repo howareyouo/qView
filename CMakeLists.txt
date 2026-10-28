@@ -28,23 +28,11 @@ set(CMAKE_AUTORCC ON)
 set(CMAKE_AUTOUIC ON)
 
 # Find required Qt components
-find_package(Qt6 QUIET COMPONENTS Core Gui Network Widgets Svg)
-if(Qt6_FOUND)
-    set(QT_VERSION_MAJOR 6)
-    set(QT_VERSION ${Qt6_VERSION})
-    # Find optional tools
-    find_package(Qt6 QUIET COMPONENTS LinguistTools)
-else()
-    set(QT5_FIND_COMPONENTS Core Gui Network Widgets Svg)
-    if(UNIX AND NOT APPLE)
-        list(APPEND QT5_FIND_COMPONENTS X11Extras)
-    endif()
-    find_package(Qt5 REQUIRED COMPONENTS ${QT5_FIND_COMPONENTS})
-    set(QT_VERSION_MAJOR 5)
-    set(QT_VERSION ${Qt5_VERSION})
-    # Find optional tools
-    find_package(Qt5 QUIET COMPONENTS LinguistTools)
-endif()
+find_package(Qt6 REQUIRED COMPONENTS Core Gui Network Widgets Svg)
+set(QT_VERSION_MAJOR 6)
+set(QT_VERSION ${Qt6_VERSION})
+# Find optional tools
+find_package(Qt6 QUIET COMPONENTS LinguistTools)
 
 # Source files
 set(PROJECT_SOURCES
@@ -186,12 +174,7 @@ elseif(APPLE)
         target_link_libraries(${PROJECT_NAME} PRIVATE ${PLATFORM_SPECIFIC_LIBS})
     endif()
 
-    # Set the icon based on the Qt version, as per the Qt documentation.
-    if(QT_VERSION_MAJOR LESS 6)
-        set(MACOSX_BUNDLE_ICON_FILE "qView_legacy.icns")
-    else()
-        set(MACOSX_BUNDLE_ICON_FILE "qView.icns")
-    endif()
+    set(MACOSX_BUNDLE_ICON_FILE "qView.icns")
 
     set(app_icon_macos "${CMAKE_CURRENT_SOURCE_DIR}/dist/mac/${MACOSX_BUNDLE_ICON_FILE}")
     set_source_files_properties(${app_icon_macos} PROPERTIES
@@ -218,9 +201,6 @@ elseif(UNIX AND NOT APPLE)
     if(NOT NO_X11)
         find_package(X11 REQUIRED)
         set(PLATFORM_SPECIFIC_LIBS ${X11_LIBRARIES})
-        if(NOT Qt6_FOUND)
-            list(APPEND PLATFORM_SPECIFIC_LIBS Qt5::X11Extras)
-        endif()
         target_link_libraries(${PROJECT_NAME} PRIVATE ${PLATFORM_SPECIFIC_LIBS})
     endif()
 endif()

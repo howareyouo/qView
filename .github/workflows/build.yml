@@ -22,15 +22,12 @@ jobs:
       matrix:
         include:
           - runner: 'ubuntu-22.04'
-            qtVersion: '5.15.2'
+            qtVersion: '6.8.3'
+            qtModules: 'qtimageformats'
           - runner: 'macos-14'
             qtVersion: '6.8.3'
             qtModules: 'qtimageformats'
             buildArch: 'Universal'
-          - runner: 'macos-14'
-            qtVersion: '5.15.2'
-            osSuffix: '_legacy'
-            buildArch: 'X64'
           - runner: 'windows-2022'
             qtVersion: '6.8.3'
             qtArch: 'win64_msvc2022_64'
@@ -42,11 +39,6 @@ jobs:
             osSuffix: '_arm64'
             qtModules: 'qtimageformats'
             buildArch: 'Arm64'
-          - runner: 'windows-2022'
-            qtVersion: '5.15.2'
-            qtArch: 'win32_msvc2019'
-            osSuffix: '_32'
-            buildArch: 'X86'
     runs-on: ${{ matrix.runner }}
     steps:
       - name: Set environment variables

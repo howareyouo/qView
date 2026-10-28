@@ -51,11 +51,7 @@ FolderScanner::getCompatibleFilesForDir(const QString &dirPath, int sortMode, bo
         if (matched) {
             fileList.append({ absoluteFilePath, fileName,
                               sortMode == 1 ? fileInfo.lastModified().toMSecsSinceEpoch() : 0,
-#if QT_VERSION >= QT_VERSION_CHECK(5, 12, 0)
                               sortMode == 2 ? fileInfo.birthTime().toMSecsSinceEpoch() : 0,
-#else
-                              sortMode == 2 ? fileInfo.created().toMSecsSinceEpoch() : 0,
-#endif
                               sortMode == 3 ? fileInfo.size() : 0,
                               sortMode == 4 ? mimeType : QString() });
         }

@@ -22,9 +22,7 @@ QVShortcutDialog::QVShortcutDialog(int index,
     this->index = index;
     this->getTransientShortcutCallback = getTransientShortcutCallback;
     ui->keySequenceEdit->setKeySequence(getTransientShortcutCallback(index).join(", "));
-#if QT_VERSION >= QT_VERSION_CHECK(6, 4, 0)
     ui->keySequenceEdit->setClearButtonEnabled(true);
-#endif
 }
 
 QVShortcutDialog::~QVShortcutDialog()
