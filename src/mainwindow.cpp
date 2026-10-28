@@ -95,7 +95,6 @@ MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent), ui(new Ui::MainWi
     contextMenu->addMenu(actionManager.buildRecentsMenu(true, contextMenu));
     contextMenu->addMenu(actionManager.buildOpenWithMenu(contextMenu));
     actionManager.addCloneOfAction(contextMenu, "opencontainingfolder");
-    actionManager.addCloneOfAction(contextMenu, "showfileinfo");
     contextMenu->addSeparator();
     actionManager.addCloneOfAction(contextMenu, "rename");
     actionManager.addCloneOfAction(contextMenu, "delete");
@@ -103,7 +102,7 @@ MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent), ui(new Ui::MainWi
     actionManager.addCloneOfAction(contextMenu, "nextfile");
     actionManager.addCloneOfAction(contextMenu, "previousfile");
     contextMenu->addSeparator();
-    contextMenu->addMenu(actionManager.buildViewMenu(true, contextMenu));
+    contextMenu->addMenu(actionManager.buildViewMenu(true, contextMenu, true));
     contextMenu->addMenu(actionManager.buildToolsMenu(true, contextMenu, false));
     contextMenu->addMenu(actionManager.buildHelpMenu(true, contextMenu));
     contextMenu->addSeparator();

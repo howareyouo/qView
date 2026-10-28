@@ -240,7 +240,7 @@ QMenuBar *ActionManager::buildMenuBar(QWidget *parent)
     return menuBar;
 }
 
-QMenu *ActionManager::buildViewMenu(bool addIcon, QWidget *parent)
+QMenu *ActionManager::buildViewMenu(bool addIcon, QWidget *parent, bool includeFileInfo)
 {
     auto *viewMenu = new QMenu(tr("&View"), parent);
     viewMenu->menuAction()->setData("view");
@@ -263,6 +263,10 @@ QMenu *ActionManager::buildViewMenu(bool addIcon, QWidget *parent)
     viewMenu->addSeparator();
     addCloneOfAction(viewMenu, "frameless");
 #endif
+    if (includeFileInfo) {
+        viewMenu->addSeparator();
+        addCloneOfAction(viewMenu, "showfileinfo");
+    }
 
     menuCloneLibrary.insert(viewMenu->menuAction()->data().toString(), viewMenu);
     return viewMenu;

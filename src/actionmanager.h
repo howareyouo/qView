@@ -101,7 +101,8 @@ public:
 
     QMenuBar *buildMenuBar(QWidget *parent = nullptr);
 
-    QMenu *buildViewMenu(bool addIcon = true, QWidget *parent = nullptr);
+    QMenu *buildViewMenu(bool addIcon = true, QWidget *parent = nullptr,
+                         bool includeFileInfo = false);
 
     QMenu *buildToolsMenu(bool addIcon = true, QWidget *parent = nullptr,
                           bool includeOptions = true);
