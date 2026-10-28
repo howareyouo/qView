@@ -9,7 +9,6 @@
 #include <QFileDialog>
 #include <QFontDatabase>
 #include <QMutex>
-#include <QtConcurrent/QtConcurrentRun>
 
 QVApplication::QVApplication(int &argc, char **argv) : QApplication(argc, argv)
 {
@@ -27,8 +26,6 @@ QVApplication::QVApplication(int &argc, char **argv) : QApplication(argc, argv)
 #if defined Q_OS_UNIX && !defined Q_OS_MACOS && QT_VERSION >= QT_VERSION_CHECK(5, 11, 0)
     QIcon::setFallbackSearchPaths(QIcon::fallbackSearchPaths() << "/usr/share/pixmaps");
 #endif
-
-    defineFilterLists();
 
     // Check for updates
     // TODO: move this to after first window show event
@@ -319,27 +316,17 @@ void QVApplication::hideIncompatibleActions()
 #endif
 }
 
-void QVApplication::defineFilterLists()
-{
-    // Building the lists takes long enough to be worth keeping off the startup path
-    filterListsFuture = QtConcurrent::run(&QVApplication::buildFilterLists);
-}
-
 void QVApplication::ensureFilterLists() const
 {
-    if (filterListsReady)
-        return;
-
+    // Built on first use instead of at startup. The first caller is the folder scan in the loading
+    // worker thread, so the cost never lands on the startup path
     static QMutex filterListsMutex;
     QMutexLocker locker(&filterListsMutex);
 
     if (filterListsReady)
         return;
 
-    if (filterListsFuture.isStarted())
-        filterListsFuture.waitForFinished();
-
-    filterLists = filterListsFuture.result();
+    filterLists = buildFilterLists();
     filterListsReady = true;
 }
 

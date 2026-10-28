@@ -11,7 +11,6 @@
 #include "qvwelcomedialog.h"
 
 #include <QApplication>
-#include <QFuture>
 #include <QRegularExpression>
 
 #if defined(qvApp)
@@ -77,8 +76,6 @@ public:
         QStringList mimeTypeNameList;
     };
 
-    void defineFilterLists();
-
     QMenuBar *getMenuBar() const { return menuBar; }
 
     const QStringList &getNameFilterList() const
@@ -121,8 +118,6 @@ private:
     static FilterLists buildFilterLists();
 
     void ensureFilterLists() const;
-
-    mutable QFuture<FilterLists> filterListsFuture;
 
     mutable FilterLists filterLists;
 

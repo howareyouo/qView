@@ -110,7 +110,7 @@ public:
 
     void loadFile(const QString &fileName, bool isReloading = false);
     ReadData readFile(const QString &fileName, const QColorSpace &targetColorSpace,
-                      const FolderScanParams &folderScanParams = {});
+                      const FolderScanParams &folderScanParams);
     void loadPixmap(const ReadData &readData);
     void closeImage();
     QList<CompatibleFile> getCompatibleFiles(const QString &dirPath) const;
