@@ -15,16 +15,16 @@ jobs:
     steps:
       - name: Set environment variables
         shell: bash
-        run: |
-          echo "qtArch=win64_msvc2022_64" >> $GITHUB_ENV
-          if [ "${{ inputs.isRelease }}" != "true" ]; then
-            buildNum=$(date '+%Y-%m-%d').$GITHUB_RUN_ATTEMPT
-            echo "nightlyDefines=NIGHTLY=$buildNum" >> $GITHUB_ENV
-            echo "nightlyString=-nightly" >> $GITHUB_ENV
-            echo "buildNumString=$buildNum" >> $GITHUB_ENV
-          fi
+        run: echo "qtArch=win64_msvc2022_64" >> $GITHUB_ENV
 
       - uses: actions/checkout@v4
+
+      - name: Read version
+        shell: bash
+        run: |
+          version=$(sed -nE 's/^#define MyAppVersion "([0-9.]+)".*/\1/p' dist/win/qView.iss)
+          echo "qvVersion=$version" >> $GITHUB_ENV
+          echo "Version $version"
 
       - name: Install Qt
         uses: jurplel/install-qt-action@v4
@@ -42,10 +42,10 @@ jobs:
         shell: pwsh
         run: |
           & dist/scripts/download-plugins.ps1
-          & dist/scripts/windeployqt.ps1 ${{ env.buildNumString }}
+          & dist/scripts/windeployqt.ps1
 
       - name: Upload Artifact
         uses: actions/upload-artifact@v4
         with:
-          name: qView${{ env.nightlyString }}-Windows_64-${{ env.buildNumString }}
+          name: qView-${{ env.qvVersion }}-win64
           path: bin
