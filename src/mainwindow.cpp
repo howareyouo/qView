@@ -77,7 +77,7 @@ MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent), ui(new Ui::MainWi
     info = new QVInfoDialog(this);
 
     // Timer for slideshow
-    connect(slideshowController.timer(), &QTimer::timeout, this, &MainWindow::slideshowAction);
+    connect(slideshowController.getTimer(), &QTimer::timeout, this, &MainWindow::slideshowAction);
 
     // Context menu
     auto &actionManager = qvApp->getActionManager();

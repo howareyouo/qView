@@ -17,7 +17,7 @@ public:
 
     bool isActive() const { return timer.isActive(); }
 
-    QTimer *timer() { return &timer; }
+    QTimer *getTimer() { return &timer; }
 
 private:
     QTimer timer;
