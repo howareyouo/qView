@@ -656,6 +656,9 @@ void MainWindow::setWindowSize()
 
     WindowGeometry::resizeToImage(*this, imageSize, minWindowResizedPercentage,
                                   maxWindowResizedPercentage, minimumImageSize);
+
+    // The size the image was given is where zooming out stops moving the window
+    graphicsView->rememberFittedWindowSize();
 }
 
 bool MainWindow::getIsPixmapLoaded() const

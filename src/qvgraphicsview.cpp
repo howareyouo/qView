@@ -396,6 +396,7 @@ void QVGraphicsView::reloadFile()
 void QVGraphicsView::postLoad()
 {
     preZoomWindowSize = QSize();
+    zoomWindowFittedSize = QSize();
     updateLoadedPixmapItem();
     qvApp->getActionManager().addFileToRecentsList(getCurrentFileDetails().fileInfo);
 
@@ -602,40 +603,21 @@ qreal QVGraphicsView::shrinkWindowForZoom(qreal scaleFactor)
     }
 
     const QSize currentSize = viewWindow->size();
-    const QSize currentViewportSize = viewport()->size();
 
-    // A window resized by hand no longer returns to the size it had before it grew
+    // A window resized by hand is no longer the size zooming comes back to
     if (preZoomWindowSize.isValid()
         && (currentSize.width() < preZoomWindowSize.width()
             || currentSize.height() < preZoomWindowSize.height()))
         preZoomWindowSize = QSize();
+    if (zoomWindowFittedSize.isValid()
+        && (currentSize.width() < zoomWindowFittedSize.width()
+            || currentSize.height() < zoomWindowFittedSize.height()))
+        zoomWindowFittedSize = QSize();
 
-    // What the image takes on screen compared to its actual size. The pixmap on screen can be a
-    // preview decoded for this very window, so only the size the file really has says whether
-    // the window is showing the image larger than it is
-    const QSize actualImageSize = getCurrentFileDetails().fullPixmapSize;
-    const QSize loadedImageSize = getCurrentFileDetails().loadedPixmapSize;
-    const qreal absoluteScaleFactor = absoluteTransform.m11();
-    const bool imageIsShownLargerThanActual =
-            loadedImageSize.width() * absoluteScaleFactor > actualImageSize.width() + 0.5
-            && loadedImageSize.height() * absoluteScaleFactor > actualImageSize.height() + 0.5;
-
-    // The viewport that shows the image at its actual size, which is the image less the overflow
-    // the fit is given on every side
-    QSize floorSize = currentSize;
-    if (imageIsShownLargerThanActual)
-        floorSize =
-                currentSize - currentViewportSize + actualImageSize + QSize(2 * MARGIN, 2 * MARGIN);
-
-    // A window larger than the image follows it down until it wraps the image at the actual size,
-    // so a picture that does not fill its window is not left in a window that keeps its size
-    // while the picture shrinks inside it, but never below the size it had before it grew
-    if (preZoomWindowSize.isValid())
-        floorSize = floorSize == currentSize ? preZoomWindowSize
-                                             : floorSize.boundedTo(preZoomWindowSize);
-
-    // Without a size the window can shrink to, the whole step belongs to the image
-    if (floorSize == currentSize)
+    // The window goes back to the size it had before it grew, or else to the size it was given
+    // for this image, and never below it: from there on only the image shrinks
+    const QSize floorSize = preZoomWindowSize.isValid() ? preZoomWindowSize : zoomWindowFittedSize;
+    if (!floorSize.isValid() || floorSize == currentSize)
         return 1.0;
 
     // Shrink by the same factor in both dimensions and never below the floor above
@@ -650,14 +632,8 @@ qreal QVGraphicsView::shrinkWindowForZoom(qreal scaleFactor)
     targetSize = targetSize.expandedTo(floorSize).boundedTo(currentSize);
 
     // The window is as small as it can get, so the rest of the step belongs to the image
-    if (targetSize == currentSize) {
-        preZoomWindowSize = QSize();
+    if (targetSize == currentSize)
         return 1.0;
-    }
-
-    // The window is back at the size it had before it grew
-    if (preZoomWindowSize.isValid() && targetSize == preZoomWindowSize)
-        preZoomWindowSize = QSize();
 
     applyZoomWindowResize(targetSize);
     return appliedScaleFactor;
@@ -679,6 +655,15 @@ void QVGraphicsView::restoreWindowSize()
         return;
 
     applyZoomWindowResize(restoreSize);
+}
+
+void QVGraphicsView::rememberFittedWindowSize()
+{
+    QWidget *viewWindow = window();
+    if (!viewWindow)
+        return;
+
+    zoomWindowFittedSize = viewWindow->size();
 }
 
 void QVGraphicsView::scaleExpensively()

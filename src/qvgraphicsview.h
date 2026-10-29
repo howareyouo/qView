@@ -42,6 +42,8 @@ public:
 
     void restoreWindowSize();
 
+    void rememberFittedWindowSize();
+
     void goToFile(const GoToFileMode &mode, int index = 0);
 
     void settingsUpdated();
@@ -140,6 +142,7 @@ private:
     QPointF lastZoomRoundingError;
     QPointF lastScrollRoundingError;
     QSize preZoomWindowSize;
+    QSize zoomWindowFittedSize;
 
     QTransform absoluteTransform;
     QTransform zoomBasis;
