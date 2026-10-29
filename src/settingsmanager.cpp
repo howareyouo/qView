@@ -5,6 +5,7 @@
 #include <QLocale>
 #include <QCoreApplication>
 #include <QDir>
+#include <QHash>
 #include <QMetaEnum>
 
 #include <QDebug>
@@ -110,13 +111,33 @@ bool SettingsManager::loadTranslation() const
     if (lang == "en")
         return true;
 
+    const QString translationsPath = translationsDir().path();
+
     QTranslator *translator = new QTranslator();
-    bool success = translator->load("qview_" + lang + ".qm", translationsDir().path());
-    if (success) {
-        qInfo() << "Loaded translation" << lang;
-        QCoreApplication::installTranslator(translator);
+    bool success = translator->load("qview_" + lang + ".qm", translationsPath);
+    if (!success) {
+        delete translator;
+        return false;
     }
-    return success;
+    qInfo() << "Loaded translation" << lang;
+    QCoreApplication::installTranslator(translator);
+
+    // Qt's own catalogs cover the framework dialogs (color, file, message boxes).
+    // They only get loaded once the qView translation is known to be present, so
+    // removing a qview_*.qm file still removes the language entirely.
+    // A few language codes differ from the ones qView uses.
+    static const QHash<QString, QString> qtLanguageAliases = {
+        { "zh_Hans", "zh_CN" },
+        { "zh_Hant", "zh_TW" },
+    };
+
+    QTranslator *qtTranslator = new QTranslator();
+    if (qtTranslator->load("qt_" + qtLanguageAliases.value(lang, lang) + ".qm", translationsPath))
+        QCoreApplication::installTranslator(qtTranslator);
+    else
+        delete qtTranslator;
+
+    return true;
 }
 
 void SettingsManager::loadSettings()
