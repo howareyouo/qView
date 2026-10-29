@@ -6,8 +6,7 @@
 #include <QSettings>
 
 // Portable mode: when a "portable" file exists next to the executable, store settings in
-// qView.ini in that same directory instead of the system registry. An empty application
-// name keeps QSettings from nesting the file under an organization/application folder.
+// qView.ini in that same directory instead of the system registry.
 static void detectPortableMode(const QString &applicationArg0)
 {
     const QFileInfo portableMarker(
@@ -17,7 +16,11 @@ static void detectPortableMode(const QString &applicationArg0)
 
     QSettings::setDefaultFormat(QSettings::IniFormat);
     QSettings::setPath(QSettings::IniFormat, QSettings::UserScope, portableMarker.absolutePath());
-    QCoreApplication::setApplicationName(QString());
+    // QSettings builds the user ini path as <path>/<org>/<app>.ini when the application name
+    // is set, and clearing the name is not an option: QCoreApplication auto-fills an empty
+    // name from argv[0] during construction. An organization name of "." collapses that
+    // level, so the settings land directly in <appDir>/qView.ini.
+    QCoreApplication::setOrganizationName(QStringLiteral("."));
 }
 
 int main(int argc, char *argv[])
