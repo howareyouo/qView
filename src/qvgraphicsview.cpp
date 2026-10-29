@@ -610,24 +610,32 @@ qreal QVGraphicsView::shrinkWindowForZoom(qreal scaleFactor)
             || currentSize.height() < preZoomWindowSize.height()))
         preZoomWindowSize = QSize();
 
-    // The viewport that shows the image at its actual size, which is the image less the
-    // overflow the fit is given on every side
-    const QSize actualSizeViewportSize =
-            getCurrentFileDetails().loadedPixmapSize + QSize(2 * MARGIN, 2 * MARGIN);
+    // What the image takes on screen compared to its actual size. The pixmap on screen can be a
+    // preview decoded for this very window, so only the size the file really has says whether
+    // the window is showing the image larger than it is
+    const QSize actualImageSize = getCurrentFileDetails().fullPixmapSize;
+    const QSize loadedImageSize = getCurrentFileDetails().loadedPixmapSize;
+    const qreal absoluteScaleFactor = absoluteTransform.m11();
     const bool imageIsShownLargerThanActual =
-            actualSizeViewportSize.width() < currentViewportSize.width()
-            && actualSizeViewportSize.height() < currentViewportSize.height();
+            loadedImageSize.width() * absoluteScaleFactor > actualImageSize.width() + 0.5
+            && loadedImageSize.height() * absoluteScaleFactor > actualImageSize.height() + 0.5;
 
-    // A window larger than the image follows it down until it wraps the image at the actual
-    // size, so a picture that does not fill its window is not left in a window that keeps its
-    // size while the picture shrinks inside it. A window that is smaller than the image only
-    // goes back to the size it had before it grew.
-    QSize floorSize;
+    // The viewport that shows the image at its actual size, which is the image less the overflow
+    // the fit is given on every side
+    QSize floorSize = currentSize;
     if (imageIsShownLargerThanActual)
-        floorSize = currentSize - currentViewportSize + actualSizeViewportSize;
-    else if (preZoomWindowSize.isValid())
-        floorSize = preZoomWindowSize;
-    else
+        floorSize =
+                currentSize - currentViewportSize + actualImageSize + QSize(2 * MARGIN, 2 * MARGIN);
+
+    // A window larger than the image follows it down until it wraps the image at the actual size,
+    // so a picture that does not fill its window is not left in a window that keeps its size
+    // while the picture shrinks inside it, but never below the size it had before it grew
+    if (preZoomWindowSize.isValid())
+        floorSize = floorSize == currentSize ? preZoomWindowSize
+                                             : floorSize.boundedTo(preZoomWindowSize);
+
+    // Without a size the window can shrink to, the whole step belongs to the image
+    if (floorSize == currentSize)
         return 1.0;
 
     // Shrink by the same factor in both dimensions and never below the floor above
@@ -638,6 +646,8 @@ qreal QVGraphicsView::shrinkWindowForZoom(qreal scaleFactor)
     QSize targetSize(qRound(currentSize.width() * appliedScaleFactor),
                      qRound(currentSize.height() * appliedScaleFactor));
     targetSize = targetSize.expandedTo(viewWindow->minimumSize()).boundedTo(currentSize);
+    // Land on the floor exactly instead of a pixel short of it
+    targetSize = targetSize.expandedTo(floorSize).boundedTo(currentSize);
 
     // The window is as small as it can get, so the rest of the step belongs to the image
     if (targetSize == currentSize) {
@@ -645,9 +655,8 @@ qreal QVGraphicsView::shrinkWindowForZoom(qreal scaleFactor)
         return 1.0;
     }
 
-    if (preZoomWindowSize.isValid()
-        && (targetSize.width() < preZoomWindowSize.width()
-            || targetSize.height() < preZoomWindowSize.height()))
+    // The window is back at the size it had before it grew
+    if (preZoomWindowSize.isValid() && targetSize == preZoomWindowSize)
         preZoomWindowSize = QSize();
 
     applyZoomWindowResize(targetSize);
