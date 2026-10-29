@@ -32,7 +32,7 @@ public:
 
     void zoomOut(const QPoint &pos = QPoint(-1, -1));
 
-    void zoom(qreal scaleFactor, const QPoint &pos = QPoint(-1, -1));
+    void zoom(qreal scaleFactor, QPoint pos = QPoint(-1, -1));
 
     void scaleExpensively();
     void makeUnscaled();
@@ -114,10 +114,13 @@ private:
 
     void setOrientedTransform(bool mirrored, bool flipped, const QTransform &base);
 
-    bool growWindowForZoom(qreal scaleFactor);
-    bool shrinkWindowForZoom(qreal scaleFactor);
+    // Both return the part of the requested scale factor the window could not take, so the
+    // rest can be applied to the image instead of being dropped
+    qreal growWindowForZoom(qreal scaleFactor);
+    qreal shrinkWindowForZoom(qreal scaleFactor);
 
-    void applyZoomWindowResize(const QSize &targetSize);
+    // Returns how much the image was zoomed by the window change itself
+    qreal applyZoomWindowResize(const QSize &targetSize);
 
     bool isWindowMovable() const;
 

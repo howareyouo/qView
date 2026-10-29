@@ -412,15 +412,29 @@ void QVGraphicsView::zoomOut(const QPoint &pos)
     zoom(qPow(qvGetSettingInt(SettingsManager::Setting::ScaleFactor) / 100.0 + 1, -1), pos);
 }
 
-void QVGraphicsView::zoom(qreal scaleFactor, const QPoint &pos)
+void QVGraphicsView::zoom(qreal scaleFactor, QPoint pos)
 {
     // Let the window grow towards the screen size before the image itself starts to zoom,
     // and shrink it back equally when zooming out
-    if (scaleFactor > 1.0 && growWindowForZoom(scaleFactor))
+    const bool cursorZoom = pos != QPoint(-1, -1);
+    const QPoint globalPos = cursorZoom ? viewport()->mapToGlobal(pos) : QPoint(-1, -1);
+
+    qreal remainingScaleFactor = scaleFactor;
+    if (scaleFactor > 1.0)
+        remainingScaleFactor = growWindowForZoom(scaleFactor);
+    else if (scaleFactor < 1.0)
+        remainingScaleFactor = shrinkWindowForZoom(scaleFactor);
+
+    // The window took the whole step
+    if (qAbs(remainingScaleFactor - 1.0) < 0.0001)
         return;
 
-    if (scaleFactor < 1.0 && shrinkWindowForZoom(scaleFactor))
-        return;
+    // The window is resized around its center, so the point under the cursor sits elsewhere
+    // in the viewport than it did before
+    if (cursorZoom)
+        pos = viewport()->mapFromGlobal(globalPos);
+
+    scaleFactor = remainingScaleFactor;
 
     // don't zoom too far out, dude
     currentScale *= scaleFactor;
@@ -487,11 +501,13 @@ static void resizeWindowKeepingCenter(QWidget *viewWindow, const QSize &targetSi
     viewWindow->setGeometry(QRect(targetFrameRect.topLeft() + frameOffset, targetSize));
 }
 
-void QVGraphicsView::applyZoomWindowResize(const QSize &targetSize)
+qreal QVGraphicsView::applyZoomWindowResize(const QSize &targetSize)
 {
     QWidget *viewWindow = window();
     if (!viewWindow)
-        return;
+        return 1.0;
+
+    const qreal previousScale = qAbs(transform().m11());
 
     // The new window size, the refitted scene and the repainted content have to reach the screen
     // as one frame. A plain resize leaves the enlarged area unfilled for a moment, which the
@@ -503,29 +519,37 @@ void QVGraphicsView::applyZoomWindowResize(const QSize &targetSize)
         viewWindow->setUpdatesEnabled(true);
         viewWindow->repaint();
     }
+
+    // The cursor zoom rounding error belongs to the old geometry
+    lastZoomEventPos = QPoint(-1, -1);
+    lastZoomRoundingError = QPointF();
+
+    // How much the refit zoomed the image by is exactly what the window took of the step
+    const qreal currentScaleFactor = qAbs(transform().m11());
+    return previousScale > 0 ? currentScaleFactor / previousScale : 1.0;
 }
 
-bool QVGraphicsView::growWindowForZoom(qreal scaleFactor)
+qreal QVGraphicsView::growWindowForZoom(qreal scaleFactor)
 {
     QWidget *viewWindow = window();
     if (!viewWindow || isOriginalSize || !getCurrentFileDetails().isPixmapLoaded)
-        return false;
+        return scaleFactor;
 
     // Respect the user's choice of never resizing the window automatically
     if (qvGetSettingInt(SettingsManager::Setting::WindowResizeMode) == SettingsManager::WindowResizeNever)
-        return false;
+        return scaleFactor;
 
     // Only the fit scale may hand over to the window, otherwise the zoom that was already
     // applied to the image would be lost when the window resizes
     if (qAbs(currentScale - 1.0) > 0.0001)
-        return false;
+        return scaleFactor;
 
     if (viewWindow->isMaximized() || viewWindow->isFullScreen())
-        return false;
+        return scaleFactor;
 
     // When the fit is locked to the actual size, the image doesn't follow the window size
     if (qAbs(qAbs(absoluteTransform.m11()) - 1.0) < 0.0001)
-        return false;
+        return scaleFactor;
 
     const QSize currentSize = viewWindow->size();
     const QSize frameExtraSize = viewWindow->frameGeometry().size() - currentSize;
@@ -543,27 +567,27 @@ bool QVGraphicsView::growWindowForZoom(qreal scaleFactor)
     targetSize = targetSize.boundedTo(maximumSize);
     // A window that is already as large as the screen can't grow any further
     if (targetSize.width() <= currentSize.width() && targetSize.height() <= currentSize.height())
-        return false;
+        return scaleFactor;
 
     if (!preZoomWindowSize.isValid())
         preZoomWindowSize = currentSize;
 
-    applyZoomWindowResize(targetSize);
-    return true;
+    const qreal windowScaleFactor = applyZoomWindowResize(targetSize);
+    return windowScaleFactor > 0 ? scaleFactor / windowScaleFactor : scaleFactor;
 }
 
-bool QVGraphicsView::shrinkWindowForZoom(qreal scaleFactor)
+qreal QVGraphicsView::shrinkWindowForZoom(qreal scaleFactor)
 {
     QWidget *viewWindow = window();
     if (!viewWindow || isOriginalSize || !preZoomWindowSize.isValid())
-        return false;
+        return scaleFactor;
 
     if (qAbs(currentScale - 1.0) > 0.0001)
-        return false;
+        return scaleFactor;
 
     if (viewWindow->isMaximized() || viewWindow->isFullScreen()) {
         preZoomWindowSize = QSize();
-        return false;
+        return scaleFactor;
     }
 
     const QSize currentSize = viewWindow->size();
@@ -583,15 +607,15 @@ bool QVGraphicsView::shrinkWindowForZoom(qreal scaleFactor)
 
     if (windowWasResizedElsewhere || targetSize == currentSize) {
         preZoomWindowSize = QSize();
-        return false;
+        return scaleFactor;
     }
 
     const bool backToStartSize = targetSize == preZoomWindowSize;
     if (backToStartSize)
         preZoomWindowSize = QSize();
 
-    applyZoomWindowResize(targetSize);
-    return true;
+    const qreal windowScaleFactor = applyZoomWindowResize(targetSize);
+    return windowScaleFactor > 0 ? scaleFactor / windowScaleFactor : scaleFactor;
 }
 
 void QVGraphicsView::restoreWindowSize()
@@ -631,6 +655,15 @@ void QVGraphicsView::scaleExpensively()
     const QRectF mappedRect =
             absoluteTransform.mapRect(QRectF({}, getCurrentFileDetails().loadedPixmapSize));
     const QSizeF mappedPixmapSize = mappedRect.size() * devicePixelRatioF();
+
+    // A pixmap that already has the resolution we would scale to only shifts the image by a
+    // sub-pixel amount, which the window resize just made visible as a flicker
+    if (!getCurrentFileDetails().isMovieLoaded) {
+        QSize targetPixmapSize = getLoadedPixmap().size();
+        targetPixmapSize.scale(mappedPixmapSize.toSize(), Qt::KeepAspectRatio);
+        if (targetPixmapSize == loadedPixmapItem->pixmap().size())
+            return;
+    }
 
     // Set image to scaled version, restoring mirror/flip with the new transform
     loadedPixmapItem->setPixmap(imageCore.scaleExpensively(mappedPixmapSize));
