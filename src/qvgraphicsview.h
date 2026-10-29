@@ -119,8 +119,7 @@ private:
     qreal growWindowForZoom(qreal scaleFactor);
     qreal shrinkWindowForZoom(qreal scaleFactor);
 
-    // Returns how much the image was zoomed by the window change itself
-    qreal applyZoomWindowResize(const QSize &targetSize);
+    void applyZoomWindowResize(const QSize &targetSize);
 
     bool isWindowMovable() const;
 

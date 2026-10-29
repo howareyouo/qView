@@ -501,13 +501,11 @@ static void resizeWindowKeepingCenter(QWidget *viewWindow, const QSize &targetSi
     viewWindow->setGeometry(QRect(targetFrameRect.topLeft() + frameOffset, targetSize));
 }
 
-qreal QVGraphicsView::applyZoomWindowResize(const QSize &targetSize)
+void QVGraphicsView::applyZoomWindowResize(const QSize &targetSize)
 {
     QWidget *viewWindow = window();
     if (!viewWindow)
-        return 1.0;
-
-    const qreal previousScale = qAbs(transform().m11());
+        return;
 
     // The new window size, the refitted scene and the repainted content have to reach the screen
     // as one frame. A plain resize leaves the enlarged area unfilled for a moment, which the
@@ -523,10 +521,6 @@ qreal QVGraphicsView::applyZoomWindowResize(const QSize &targetSize)
     // The cursor zoom rounding error belongs to the old geometry
     lastZoomEventPos = QPoint(-1, -1);
     lastZoomRoundingError = QPointF();
-
-    // How much the refit zoomed the image by is exactly what the window took of the step
-    const qreal currentScaleFactor = qAbs(transform().m11());
-    return previousScale > 0 ? currentScaleFactor / previousScale : 1.0;
 }
 
 qreal QVGraphicsView::growWindowForZoom(qreal scaleFactor)
@@ -558,22 +552,27 @@ qreal QVGraphicsView::growWindowForZoom(qreal scaleFactor)
 
     // Grow both dimensions by the same factor so the window keeps its shape, and stop as soon as
     // either dimension reaches the screen instead of stretching the other one towards it
-    const qreal widthScaleFactor = maximumSize.width() / qreal(currentSize.width());
-    const qreal heightScaleFactor = maximumSize.height() / qreal(currentSize.height());
-    const qreal appliedScaleFactor = qMin(scaleFactor, qMin(widthScaleFactor, heightScaleFactor));
+    const qreal availableScaleFactor = qMin(maximumSize.width() / qreal(currentSize.width()),
+                                            maximumSize.height() / qreal(currentSize.height()));
+    const qreal appliedScaleFactor = qMin(scaleFactor, availableScaleFactor);
 
     QSize targetSize(qRound(currentSize.width() * appliedScaleFactor),
                      qRound(currentSize.height() * appliedScaleFactor));
     targetSize = targetSize.boundedTo(maximumSize);
     // A window that is already as large as the screen can't grow any further
-    if (targetSize.width() <= currentSize.width() && targetSize.height() <= currentSize.height())
+    if (targetSize == currentSize)
         return scaleFactor;
 
     if (!preZoomWindowSize.isValid())
         preZoomWindowSize = currentSize;
 
-    const qreal windowScaleFactor = applyZoomWindowResize(targetSize);
-    return windowScaleFactor > 0 ? scaleFactor / windowScaleFactor : scaleFactor;
+    applyZoomWindowResize(targetSize);
+
+    // A step the window has room for is taken as a whole, so the image stays where it is and the
+    // next step may grow the window again. Only the overshoot of a step that would push the
+    // window past the screen is left to the image
+    const qreal remainingScaleFactor = scaleFactor / appliedScaleFactor;
+    return remainingScaleFactor < 1.0 + 0.0001 ? 1.0 : remainingScaleFactor;
 }
 
 qreal QVGraphicsView::shrinkWindowForZoom(qreal scaleFactor)
@@ -596,9 +595,10 @@ qreal QVGraphicsView::shrinkWindowForZoom(qreal scaleFactor)
 
     // Shrink by the same factor in both dimensions as well, and never below the size the window
     // had before it started to grow
-    const qreal widthScaleFactor = preZoomWindowSize.width() / qreal(currentSize.width());
-    const qreal heightScaleFactor = preZoomWindowSize.height() / qreal(currentSize.height());
-    const qreal appliedScaleFactor = qMax(scaleFactor, qMax(widthScaleFactor, heightScaleFactor));
+    const qreal availableScaleFactor =
+            qMax(preZoomWindowSize.width() / qreal(currentSize.width()),
+                 preZoomWindowSize.height() / qreal(currentSize.height()));
+    const qreal appliedScaleFactor = qMax(scaleFactor, availableScaleFactor);
 
     QSize targetSize(qRound(currentSize.width() * appliedScaleFactor),
                      qRound(currentSize.height() * appliedScaleFactor));
@@ -614,8 +614,12 @@ qreal QVGraphicsView::shrinkWindowForZoom(qreal scaleFactor)
     if (backToStartSize)
         preZoomWindowSize = QSize();
 
-    const qreal windowScaleFactor = applyZoomWindowResize(targetSize);
-    return windowScaleFactor > 0 ? scaleFactor / windowScaleFactor : scaleFactor;
+    applyZoomWindowResize(targetSize);
+
+    // Same as when growing: the part of the step the window had room to take is done, the rest
+    // continues on the image
+    const qreal remainingScaleFactor = scaleFactor / appliedScaleFactor;
+    return remainingScaleFactor > 1.0 - 0.0001 ? 1.0 : remainingScaleFactor;
 }
 
 void QVGraphicsView::restoreWindowSize()
