@@ -487,6 +487,24 @@ static void resizeWindowKeepingCenter(QWidget *viewWindow, const QSize &targetSi
     viewWindow->setGeometry(QRect(targetFrameRect.topLeft() + frameOffset, targetSize));
 }
 
+void QVGraphicsView::applyZoomWindowResize(const QSize &targetSize)
+{
+    QWidget *viewWindow = window();
+    if (!viewWindow)
+        return;
+
+    // The new window size, the refitted scene and the repainted content have to reach the screen
+    // as one frame. A plain resize leaves the enlarged area unfilled for a moment, which the
+    // translucent window shows as a flash of whatever is behind it.
+    const bool updatesWereEnabled = viewWindow->updatesEnabled();
+    viewWindow->setUpdatesEnabled(false);
+    resizeWindowKeepingCenter(viewWindow, targetSize);
+    if (updatesWereEnabled) {
+        viewWindow->setUpdatesEnabled(true);
+        viewWindow->repaint();
+    }
+}
+
 bool QVGraphicsView::growWindowForZoom(qreal scaleFactor)
 {
     QWidget *viewWindow = window();
@@ -530,7 +548,7 @@ bool QVGraphicsView::growWindowForZoom(qreal scaleFactor)
     if (!preZoomWindowSize.isValid())
         preZoomWindowSize = currentSize;
 
-    resizeWindowKeepingCenter(viewWindow, targetSize);
+    applyZoomWindowResize(targetSize);
     return true;
 }
 
@@ -572,7 +590,7 @@ bool QVGraphicsView::shrinkWindowForZoom(qreal scaleFactor)
     if (backToStartSize)
         preZoomWindowSize = QSize();
 
-    resizeWindowKeepingCenter(viewWindow, targetSize);
+    applyZoomWindowResize(targetSize);
     return true;
 }
 
@@ -591,7 +609,7 @@ void QVGraphicsView::restoreWindowSize()
     if (viewWindow->size() == restoreSize)
         return;
 
-    resizeWindowKeepingCenter(viewWindow, restoreSize);
+    applyZoomWindowResize(restoreSize);
 }
 
 void QVGraphicsView::scaleExpensively()

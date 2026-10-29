@@ -117,6 +117,8 @@ private:
     bool growWindowForZoom(qreal scaleFactor);
     bool shrinkWindowForZoom(qreal scaleFactor);
 
+    void applyZoomWindowResize(const QSize &targetSize);
+
     bool isWindowMovable() const;
 
     bool hasPannableArea() const;
