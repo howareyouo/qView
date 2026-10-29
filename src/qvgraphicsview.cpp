@@ -588,7 +588,12 @@ qreal QVGraphicsView::growWindowForZoom(qreal scaleFactor)
 qreal QVGraphicsView::shrinkWindowForZoom(qreal scaleFactor)
 {
     QWidget *viewWindow = window();
-    if (!viewWindow || isOriginalSize || !preZoomWindowSize.isValid())
+    if (!viewWindow || isOriginalSize || !getCurrentFileDetails().isPixmapLoaded)
+        return 1.0;
+
+    // Respect the user's choice of never resizing the window automatically
+    if (qvGetSettingInt(SettingsManager::Setting::WindowResizeMode)
+        == SettingsManager::WindowResizeNever)
         return 1.0;
 
     if (viewWindow->isMaximized() || viewWindow->isFullScreen()) {
@@ -597,28 +602,52 @@ qreal QVGraphicsView::shrinkWindowForZoom(qreal scaleFactor)
     }
 
     const QSize currentSize = viewWindow->size();
-    const bool windowWasResizedElsewhere = currentSize.width() < preZoomWindowSize.width()
-            || currentSize.height() < preZoomWindowSize.height();
+    const QSize currentViewportSize = viewport()->size();
 
-    // Shrink by the same factor in both dimensions as well, and never below the size the window
-    // had before it started to grow
-    const qreal availableScaleFactor =
-            qMax(preZoomWindowSize.width() / qreal(currentSize.width()),
-                 preZoomWindowSize.height() / qreal(currentSize.height()));
-    const qreal appliedScaleFactor = qMax(scaleFactor, availableScaleFactor);
+    // A window resized by hand no longer returns to the size it had before it grew
+    if (preZoomWindowSize.isValid()
+        && (currentSize.width() < preZoomWindowSize.width()
+            || currentSize.height() < preZoomWindowSize.height()))
+        preZoomWindowSize = QSize();
+
+    // The viewport that shows the image at its actual size, which is the image less the
+    // overflow the fit is given on every side
+    const QSize actualSizeViewportSize =
+            getCurrentFileDetails().loadedPixmapSize + QSize(2 * MARGIN, 2 * MARGIN);
+    const bool imageIsShownLargerThanActual =
+            actualSizeViewportSize.width() < currentViewportSize.width()
+            && actualSizeViewportSize.height() < currentViewportSize.height();
+
+    // A window larger than the image follows it down until it wraps the image at the actual
+    // size, so a picture that does not fill its window is not left in a window that keeps its
+    // size while the picture shrinks inside it. A window that is smaller than the image only
+    // goes back to the size it had before it grew.
+    QSize floorSize;
+    if (imageIsShownLargerThanActual)
+        floorSize = currentSize - currentViewportSize + actualSizeViewportSize;
+    else if (preZoomWindowSize.isValid())
+        floorSize = preZoomWindowSize;
+    else
+        return 1.0;
+
+    // Shrink by the same factor in both dimensions and never below the floor above
+    const qreal floorScaleFactor = qMax(floorSize.width() / qreal(currentSize.width()),
+                                        floorSize.height() / qreal(currentSize.height()));
+    const qreal appliedScaleFactor = qMax(scaleFactor, floorScaleFactor);
 
     QSize targetSize(qRound(currentSize.width() * appliedScaleFactor),
                      qRound(currentSize.height() * appliedScaleFactor));
-    targetSize.setWidth(qMax(targetSize.width(), preZoomWindowSize.width()));
-    targetSize.setHeight(qMax(targetSize.height(), preZoomWindowSize.height()));
+    targetSize = targetSize.expandedTo(viewWindow->minimumSize()).boundedTo(currentSize);
 
-    if (windowWasResizedElsewhere || targetSize == currentSize) {
+    // The window is as small as it can get, so the rest of the step belongs to the image
+    if (targetSize == currentSize) {
         preZoomWindowSize = QSize();
         return 1.0;
     }
 
-    const bool backToStartSize = targetSize == preZoomWindowSize;
-    if (backToStartSize)
+    if (preZoomWindowSize.isValid()
+        && (targetSize.width() < preZoomWindowSize.width()
+            || targetSize.height() < preZoomWindowSize.height()))
         preZoomWindowSize = QSize();
 
     applyZoomWindowResize(targetSize);
