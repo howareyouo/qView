@@ -142,7 +142,9 @@ void QVApplication::setLastFileDialogDir(const QString &dir)
 MainWindow *QVApplication::newWindow()
 {
     auto *w = new MainWindow();
-    w->show();
+    // A window that fills the screen never has to be resized for zooming, and a translucent
+    // window that is not resized has nothing to flash while the image scales inside it
+    w->showMaximized();
     w->raise();
 
     return w;
