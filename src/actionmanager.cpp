@@ -365,14 +365,8 @@ void ActionManager::loadRecentsList()
     QSettings settings;
     settings.beginGroup("recents");
 
-    const QVariant value = settings.value("recentFiles");
-    if (value.typeId() == QMetaType::QString) {
-        recentsList = variantToRecentsList(value);
-    } else if (value.isValid()) {
-        // Migrate the legacy binary QVariantList format to the plain-text JSON format
-        recentsList = variantListToRecentsList(value.toList());
-        settings.setValue("recentFiles", recentsListToVariant(recentsList));
-    }
+    QVariantList variantListRecents = settings.value("recentFiles").toList();
+    recentsList = variantListToRecentsList(variantListRecents);
 
     auditRecentsList();
 }
@@ -384,7 +378,9 @@ void ActionManager::saveRecentsList()
     QSettings settings;
     settings.beginGroup("recents");
 
-    settings.setValue("recentFiles", recentsListToVariant(recentsList));
+    auto variantList = recentsListToVariantList(recentsList);
+
+    settings.setValue("recentFiles", variantList);
 }
 
 void ActionManager::addFileToRecentsList(const QFileInfo &file)

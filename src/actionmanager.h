@@ -2,9 +2,6 @@
 #define ACTIONMANAGER_H
 
 #include <QFileInfo>
-#include <QJsonArray>
-#include <QJsonDocument>
-#include <QJsonObject>
 #include <QMenuBar>
 #include <QMultiHash>
 
@@ -58,31 +55,16 @@ public:
         return allActionsOfType;
     }
 
-    // Recent files are stored as a plain-text JSON array so that the settings file
-    // stays human-readable in portable mode
-    static QVariant recentsListToVariant(const QList<SRecent> &recentsList)
+    static QVariantList recentsListToVariantList(const QList<SRecent> &recentsList)
     {
-        QJsonArray jsonArray;
+        QVariantList variantList;
         for (const auto &recent : recentsList) {
-            jsonArray.append(
-                    QJsonObject{ { "fileName", recent.fileName }, { "filePath", recent.filePath } });
+            QStringList stringList = { recent.fileName, recent.filePath };
+            variantList.append(QVariant(stringList));
         }
-        return QString::fromUtf8(QJsonDocument(jsonArray).toJson(QJsonDocument::Compact));
+        return variantList;
     }
 
-    static QList<SRecent> variantToRecentsList(const QVariant &variant)
-    {
-        QList<SRecent> recentsList;
-        const QJsonDocument document = QJsonDocument::fromJson(variant.toString().toUtf8());
-        for (const auto &value : document.array()) {
-            const QJsonObject object = value.toObject();
-            recentsList.append(
-                    { object.value("fileName").toString(), object.value("filePath").toString() });
-        }
-        return recentsList;
-    }
-
-    // Converts the legacy binary QVariantList format written before the JSON format existed
     static QList<SRecent> variantListToRecentsList(const QVariantList &variantList)
     {
         QList<SRecent> recentsList;
