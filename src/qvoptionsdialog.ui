@@ -115,11 +115,17 @@
           <item row="0" column="1">
            <widget class="QWidget" name="bgColorControls" native="true">
             <layout class="QHBoxLayout" name="bgColorControlsLayout">
-             <property name="contentsMargins">
-              <size>
-               <width>0</width>
-               <height>0</height>
-              </size>
+             <property name="leftMargin">
+              <number>0</number>
+             </property>
+             <property name="topMargin">
+              <number>0</number>
+             </property>
+             <property name="rightMargin">
+              <number>0</number>
+             </property>
+             <property name="bottomMargin">
+              <number>0</number>
              </property>
              <item>
               <widget class="QPushButton" name="bgColorButton">
