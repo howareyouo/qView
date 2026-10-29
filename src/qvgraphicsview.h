@@ -114,8 +114,8 @@ private:
 
     void setOrientedTransform(bool mirrored, bool flipped, const QTransform &base);
 
-    // Both return the part of the requested scale factor the window could not take, so the
-    // rest can be applied to the image instead of being dropped
+    // Both return the part of the step the window took, or 1.0 when it was not resized and the
+    // step is left to the image
     qreal growWindowForZoom(qreal scaleFactor);
     qreal shrinkWindowForZoom(qreal scaleFactor);
 

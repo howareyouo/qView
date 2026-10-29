@@ -414,19 +414,39 @@ void QVGraphicsView::zoomOut(const QPoint &pos)
 
 void QVGraphicsView::zoom(qreal scaleFactor, QPoint pos)
 {
-    // Let the window grow towards the screen size before the image itself starts to zoom,
-    // and shrink it back equally when zooming out
     const bool cursorZoom = pos != QPoint(-1, -1);
     const QPoint globalPos = cursorZoom ? viewport()->mapToGlobal(pos) : QPoint(-1, -1);
 
-    qreal remainingScaleFactor = scaleFactor;
-    if (scaleFactor > 1.0)
-        remainingScaleFactor = growWindowForZoom(scaleFactor);
-    else if (scaleFactor < 1.0)
-        remainingScaleFactor = shrinkWindowForZoom(scaleFactor);
+    // The window only ever takes whole steps at the fit scale, since a resize refits the image
+    // and would drop the zoom it had. So a step that would end off fit is split instead: the
+    // image goes back to fit exactly and the window takes the rest of the step. Leaving the
+    // image even slightly off fit would keep the window from shrinking back again.
+    const bool atFit = qAbs(currentScale - 1.0) <= 0.0001;
+    qreal imageScaleFactor = scaleFactor;
 
-    // The window took the whole step
-    if (qAbs(remainingScaleFactor - 1.0) < 0.0001)
+    if (!atFit) {
+        const qreal fitScaleFactor = 1.0 / currentScale;
+        const bool reachesFit =
+                currentScale > 1.0 ? scaleFactor <= fitScaleFactor : scaleFactor >= fitScaleFactor;
+        // Without reaching the fit scale the whole step belongs to the image
+        scaleFactor = reachesFit ? scaleFactor / fitScaleFactor : 1.0;
+    }
+
+    if (qAbs(scaleFactor - 1.0) > 0.0001) {
+        const qreal windowScaleFactor = scaleFactor > 1.0 ? growWindowForZoom(scaleFactor)
+                                                          : shrinkWindowForZoom(scaleFactor);
+
+        if (qAbs(windowScaleFactor - 1.0) > 0.0001) {
+            // The resize refitted the image, so only what the window could not take is left over
+            imageScaleFactor = scaleFactor / windowScaleFactor;
+        } else if (!atFit) {
+            // The window stays as it is, the image just goes back to the fit scale
+            imageScaleFactor = 1.0 / currentScale;
+        }
+    }
+
+    // The window took care of the whole step
+    if (qAbs(imageScaleFactor - 1.0) < 0.0001)
         return;
 
     // The window is resized around its center, so the point under the cursor sits elsewhere
@@ -434,7 +454,7 @@ void QVGraphicsView::zoom(qreal scaleFactor, QPoint pos)
     if (cursorZoom)
         pos = viewport()->mapFromGlobal(globalPos);
 
-    scaleFactor = remainingScaleFactor;
+    scaleFactor = imageScaleFactor;
 
     // don't zoom too far out, dude
     currentScale *= scaleFactor;
@@ -527,23 +547,18 @@ qreal QVGraphicsView::growWindowForZoom(qreal scaleFactor)
 {
     QWidget *viewWindow = window();
     if (!viewWindow || isOriginalSize || !getCurrentFileDetails().isPixmapLoaded)
-        return scaleFactor;
+        return 1.0;
 
     // Respect the user's choice of never resizing the window automatically
     if (qvGetSettingInt(SettingsManager::Setting::WindowResizeMode) == SettingsManager::WindowResizeNever)
-        return scaleFactor;
-
-    // Only the fit scale may hand over to the window, otherwise the zoom that was already
-    // applied to the image would be lost when the window resizes
-    if (qAbs(currentScale - 1.0) > 0.0001)
-        return scaleFactor;
+        return 1.0;
 
     if (viewWindow->isMaximized() || viewWindow->isFullScreen())
-        return scaleFactor;
+        return 1.0;
 
     // When the fit is locked to the actual size, the image doesn't follow the window size
     if (qAbs(qAbs(absoluteTransform.m11()) - 1.0) < 0.0001)
-        return scaleFactor;
+        return 1.0;
 
     const QSize currentSize = viewWindow->size();
     const QSize frameExtraSize = viewWindow->frameGeometry().size() - currentSize;
@@ -561,32 +576,24 @@ qreal QVGraphicsView::growWindowForZoom(qreal scaleFactor)
     targetSize = targetSize.boundedTo(maximumSize);
     // A window that is already as large as the screen can't grow any further
     if (targetSize == currentSize)
-        return scaleFactor;
+        return 1.0;
 
     if (!preZoomWindowSize.isValid())
         preZoomWindowSize = currentSize;
 
     applyZoomWindowResize(targetSize);
-
-    // A step the window has room for is taken as a whole, so the image stays where it is and the
-    // next step may grow the window again. Only the overshoot of a step that would push the
-    // window past the screen is left to the image
-    const qreal remainingScaleFactor = scaleFactor / appliedScaleFactor;
-    return remainingScaleFactor < 1.0 + 0.0001 ? 1.0 : remainingScaleFactor;
+    return appliedScaleFactor;
 }
 
 qreal QVGraphicsView::shrinkWindowForZoom(qreal scaleFactor)
 {
     QWidget *viewWindow = window();
     if (!viewWindow || isOriginalSize || !preZoomWindowSize.isValid())
-        return scaleFactor;
-
-    if (qAbs(currentScale - 1.0) > 0.0001)
-        return scaleFactor;
+        return 1.0;
 
     if (viewWindow->isMaximized() || viewWindow->isFullScreen()) {
         preZoomWindowSize = QSize();
-        return scaleFactor;
+        return 1.0;
     }
 
     const QSize currentSize = viewWindow->size();
@@ -607,7 +614,7 @@ qreal QVGraphicsView::shrinkWindowForZoom(qreal scaleFactor)
 
     if (windowWasResizedElsewhere || targetSize == currentSize) {
         preZoomWindowSize = QSize();
-        return scaleFactor;
+        return 1.0;
     }
 
     const bool backToStartSize = targetSize == preZoomWindowSize;
@@ -615,11 +622,7 @@ qreal QVGraphicsView::shrinkWindowForZoom(qreal scaleFactor)
         preZoomWindowSize = QSize();
 
     applyZoomWindowResize(targetSize);
-
-    // Same as when growing: the part of the step the window had room to take is done, the rest
-    // continues on the image
-    const qreal remainingScaleFactor = scaleFactor / appliedScaleFactor;
-    return remainingScaleFactor > 1.0 - 0.0001 ? 1.0 : remainingScaleFactor;
+    return appliedScaleFactor;
 }
 
 void QVGraphicsView::restoreWindowSize()
