@@ -39,6 +39,7 @@ public:
 
     void resetScale();
     void originalSize();
+    void restoreZoom(qreal scaleFactor, bool originalSizeMode);
 
     void restoreWindowSize();
 
@@ -62,6 +63,11 @@ public:
     const QMovie &getLoadedMovie() const { return imageCore.getLoadedMovie(); }
 
     bool isResetScale() const { return !isOriginalSize && qFuzzyCompare(currentScale, 1.0); }
+
+    // The zoom relative to the fit, which means the same thing on any image, so it can be saved
+    // and put back on whatever is loaded next
+    qreal getCurrentScale() const { return currentScale; }
+    bool getIsOriginalSize() const { return isOriginalSize; }
 
 signals:
     void cancelSlideshow();

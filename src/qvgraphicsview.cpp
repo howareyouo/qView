@@ -836,6 +836,19 @@ void QVGraphicsView::applyScale(qreal scaleFactor)
         expensiveScaleTimerNew->start();
 }
 
+// Puts the zoom a previous session ended at back on an image that has just been loaded. Has to
+// run after the window has been given the new image's size, since that refits the image.
+void QVGraphicsView::restoreZoom(qreal scaleFactor, bool originalSizeMode)
+{
+    if (!getCurrentFileDetails().isPixmapLoaded)
+        return;
+
+    if (originalSizeMode)
+        originalSize();
+    else
+        applyScale(scaleFactor);
+}
+
 void QVGraphicsView::originalSize()
 {
     if (isOriginalSize) {

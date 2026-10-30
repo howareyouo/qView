@@ -138,6 +138,8 @@ private:
     Ui::MainWindow *ui;
     QVGraphicsView *graphicsView;
 
+    void saveZoom();
+
     QMenu *contextMenu;
     QMenu *virtualMenu;
 
@@ -161,6 +163,11 @@ private:
     QFutureWatcher<QList<OpenWith::OpenWithItem>> openWithFutureWatcher;
 
     bool openWithNeedsPopulate;
+
+    // Zoom the last session ended at, put back on the first image this window loads
+    bool zoomRestorePending;
+    qreal zoomRestoreScale;
+    bool zoomRestoreOriginalSize;
 };
 
 #endif // MAINWINDOW_H

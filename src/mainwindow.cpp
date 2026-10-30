@@ -164,6 +164,16 @@ MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent), ui(new Ui::MainWi
     QSettings settings;
     restoreGeometry(settings.value("geometry").toByteArray());
 
+    // The zoom the last session ended at only comes back when the user asked for the zoom to be
+    // remembered. It's applied once this window has loaded its first image.
+    zoomRestorePending =
+            qvApp->getSettingsManager().getBool(SettingsManager::Setting::RememberZoom);
+    zoomRestoreScale = settings.value("lastzoom", 1.0).toReal();
+    zoomRestoreOriginalSize = settings.value("lastzoomactualsize", false).toBool();
+
+    // Exiting without closing the window skips closeEvent, so save the zoom on the way out too
+    connect(qApp, &QCoreApplication::aboutToQuit, this, &MainWindow::saveZoom);
+
     // Show welcome dialog on first launch
     if (!settings.value("firstlaunch", false).toBool()) {
         settings.setValue("firstlaunch", true);
@@ -220,12 +230,26 @@ void MainWindow::closeEvent(QCloseEvent *event)
     QSettings settings;
     settings.setValue("geometry", saveGeometry());
 
+    // Save the zoom the session ends at so the next launch can go back to it
+    saveZoom();
+
     qvApp->deleteFromLastActiveWindows(this);
     qvApp->getActionManager().untrackClonedActions(contextMenu);
     qvApp->getActionManager().untrackClonedActions(menuBar());
     qvApp->getActionManager().untrackClonedActions(virtualMenu);
 
     QMainWindow::closeEvent(event);
+}
+
+void MainWindow::saveZoom()
+{
+    if (!getCurrentFileDetails().isPixmapLoaded
+        || !qvApp->getSettingsManager().getBool(SettingsManager::Setting::RememberZoom))
+        return;
+
+    QSettings settings;
+    settings.setValue("lastzoom", graphicsView->getCurrentScale());
+    settings.setValue("lastzoomactualsize", graphicsView->getIsOriginalSize());
 }
 
 void MainWindow::changeEvent(QEvent *event)
@@ -473,6 +497,14 @@ void MainWindow::fileChanged()
         refreshProperties();
     updateWindowTitle();
     updateWindowFilePath();
+
+    // A zoom saved by the last session can only go back on once the window has taken the size of
+    // the image that just loaded, since resizing it refits the image. This is the first point
+    // after that, and it only happens for the first image this window shows.
+    if (zoomRestorePending) {
+        zoomRestorePending = false;
+        graphicsView->restoreZoom(zoomRestoreScale, zoomRestoreOriginalSize);
+    }
 
     // repaint to handle error message
     update();
