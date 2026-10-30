@@ -1246,8 +1246,8 @@ No write permission or file is read-only.</source>
         <translation>记住缩放比例</translation>
     </message>
     <message>
-        <source>Keep the zoom level of the previous image when switching to another one</source>
-        <translation>切换图片时保持当前的缩放比例</translation>
+        <source>Keep the zoom level of the previous image when switching to another one of the same shape</source>
+        <translation>切换到同比例的另一张图片时保持当前的缩放比例</translation>
     </message>
 </context>
 <context>

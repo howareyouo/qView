@@ -770,17 +770,32 @@ void QVGraphicsView::animatedFrameChanged(QRect rect)
     }
 }
 
+// Whether two images are framed the same way, which is what lets a zoom carried over from one of
+// them mean the same thing on the other
+static bool hasSameShape(const QSize &previousSize, const QSize &newSize)
+{
+    if (previousSize.isEmpty() || newSize.isEmpty())
+        return false;
+
+    // A preview decode is rounded to whole pixels, so the ratios only have to agree closely
+    const qreal previousRatio = previousSize.width() / qreal(previousSize.height());
+    const qreal newRatio = newSize.width() / qreal(newSize.height());
+    return qAbs(previousRatio - newRatio) <= qMax(previousRatio, newRatio) * 0.01;
+}
+
 void QVGraphicsView::updateLoadedPixmapItem()
 {
     // The zoom the image was at, to be reused for the one that is replacing it. It is relative to
-    // the fit scale, so it means the same thing on an image of any size.
+    // the fit scale, so it means the same thing on an image of any size, but only on one framed the
+    // same way: a differently shaped image starts at the fit scale instead.
+    const QSize previousSize = loadedPixmapItem->pixmap().size();
     const qreal previousScale = currentScale;
-    const bool reuseScale =
-            qvGetSettingBool(SettingsManager::Setting::RememberZoom) && !isOriginalSize;
 
     // set pixmap and offset
     loadedPixmapItem->setPixmap(getLoadedPixmap());
     scaledSize = loadedPixmapItem->boundingRect().size().toSize();
+    const bool reuseScale = qvGetSettingBool(SettingsManager::Setting::RememberZoom)
+            && !isOriginalSize && hasSameShape(previousSize, scaledSize);
 
     resetScale();
 

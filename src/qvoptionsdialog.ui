@@ -540,7 +540,7 @@
           <item row="5" column="1">
            <widget class="QCheckBox" name="rememberZoomCheckbox">
             <property name="toolTip">
-             <string>Keep the zoom level of the previous image when switching to another one</string>
+             <string>Keep the zoom level of the previous image when switching to another one of the same shape</string>
             </property>
             <property name="text">
              <string>Remember zoom level</string>
