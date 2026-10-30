@@ -123,6 +123,10 @@ private:
 
     void applyScale(qreal scaleFactor);
 
+    // Puts a zoom relative to the fit back on the image the way zooming would: the window grows for
+    // the part it can hold and only the rest is left on the image
+    void applyZoomRelativeToFit(qreal scaleFactor);
+
     void setOrientedTransform(bool mirrored, bool flipped, const QTransform &base);
 
     // Both return the part of the step the window took, or 1.0 when it was not resized and the
