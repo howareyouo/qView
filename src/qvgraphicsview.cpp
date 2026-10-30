@@ -788,7 +788,7 @@ void QVGraphicsView::updateLoadedPixmapItem()
 
     // Only once the window has resized itself for the new image, since resizing refits the image
     if (reuseScale)
-        applyScale(previousScale);
+        applyZoomRelativeToFit(previousScale);
 }
 
 void QVGraphicsView::fullPixmapLoaded()
@@ -871,6 +871,36 @@ void QVGraphicsView::applyScale(qreal scaleFactor)
         expensiveScaleTimerNew->start();
 }
 
+// Puts a zoom relative to the fit back on the image the way zooming would: the window grows for the
+// part it can hold and only the rest is left on the image, so the view ends at the fit whenever the
+// window had room, which is what lets the next zoom step move the window again.
+void QVGraphicsView::applyZoomRelativeToFit(qreal scaleFactor)
+{
+    if (!getCurrentFileDetails().isPixmapLoaded)
+        return;
+
+    const qreal fitScale = absoluteTransform.m11();
+    if (scaleFactor <= 0 || fitScale <= 0)
+        return;
+
+    // A zoom the screen cannot show would only come back cut off, so it is capped first
+    const qreal targetScale = qMin(fitScale * scaleFactor, maximumScaleOnScreen());
+    const qreal zoomScale = targetScale / fitScale;
+
+    // The window takes what it can of the zoom the way scrolling would, and only the rest is left
+    // on the image
+    if (zoomScale > 1.0) {
+        QSize windowTargetSize;
+        if (qAbs(planGrowWindowForZoom(zoomScale, windowTargetSize) - 1.0) > FIT_EPSILON) {
+            rememberWindowSizeBeforeGrowing(preZoomWindowSize, window());
+            applyZoomWindowResize(windowTargetSize);
+        }
+    }
+
+    // Resizing the window refits the image, so what is left over is measured against the new fit
+    applyScale(targetScale / absoluteTransform.m11());
+}
+
 // Puts the zoom a previous session ended at back on an image that has just been loaded. Has to
 // run after the window has been given the new image's size, since that refits the image.
 void QVGraphicsView::restoreZoom(qreal absoluteScale, bool originalSizeMode)
@@ -887,22 +917,7 @@ void QVGraphicsView::restoreZoom(qreal absoluteScale, bool originalSizeMode)
     if (absoluteScale <= 0 || fitScale <= 0)
         return;
 
-    // A zoom the screen cannot show would only come back cut off, so it is capped first. What is
-    // left goes where scrolling would have put it: the window grows for the part it can hold, and
-    // only what the window cannot take stays on the image.
-    const qreal targetScale = qMin(absoluteScale, maximumScaleOnScreen());
-    const qreal zoomScale = targetScale / fitScale;
-
-    if (zoomScale > 1.0) {
-        QSize windowTargetSize;
-        if (qAbs(planGrowWindowForZoom(zoomScale, windowTargetSize) - 1.0) > FIT_EPSILON) {
-            rememberWindowSizeBeforeGrowing(preZoomWindowSize, window());
-            applyZoomWindowResize(windowTargetSize);
-        }
-    }
-
-    // Resizing the window refits the image, so what is left over is measured against the new fit
-    applyScale(targetScale / absoluteTransform.m11());
+    applyZoomRelativeToFit(absoluteScale / fitScale);
 }
 
 // The largest zoom the screen has room for, so that putting a saved zoom back never leaves part of

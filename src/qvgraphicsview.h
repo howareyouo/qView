@@ -126,6 +126,10 @@ private:
     // Puts a zoom step on the image itself, on top of the transform the view already has
     void applyRelativeZoom(qreal relativeFactor);
 
+    // Puts a zoom relative to the fit back on the image the way zooming would: the window grows for
+    // the part it can hold and only the rest is left on the image
+    void applyZoomRelativeToFit(qreal scaleFactor);
+
     void setOrientedTransform(bool mirrored, bool flipped, const QTransform &base);
 
     bool isAtFit() const;
