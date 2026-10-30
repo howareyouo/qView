@@ -413,8 +413,18 @@ void QVGraphicsView::zoomOut(const QPoint &pos)
     zoom(qPow(qvGetSettingInt(SettingsManager::Setting::ScaleFactor) / 100.0 + 1, -1), pos);
 }
 
-void QVGraphicsView::zoom(qreal scaleFactor, QPoint pos)
+// A window that grew is the size a later zoom out comes back to
+static void rememberWindowSizeBeforeGrowing(QSize &recordedSize, QWidget *viewWindow)
 {
+    if (viewWindow && !recordedSize.isValid())
+        recordedSize = viewWindow->size();
+}
+
+void QVGraphicsView::zoom(qreal requestedStep, QPoint pos)
+{
+    if (requestedStep <= 0)
+        return;
+
     const bool cursorZoom = pos != QPoint(-1, -1);
     const QPoint globalPos = cursorZoom ? viewport()->mapToGlobal(pos) : QPoint(-1, -1);
 
@@ -422,32 +432,52 @@ void QVGraphicsView::zoom(qreal scaleFactor, QPoint pos)
     // and would drop the zoom it had. So a step that would end off fit is split instead: the
     // image goes back to fit exactly and the window takes the rest of the step. Leaving the
     // image even slightly off fit would keep the window from shrinking back again.
-    const bool atFit = qAbs(currentScale - 1.0) <= 0.0001;
-    qreal imageScaleFactor = scaleFactor;
+    const bool atFit = isAtFit();
+    // The whole step in fit-relative units, which is the scale the window is moved by
+    const qreal stepInFitUnits = currentScale * requestedStep;
+    // Only a step that crosses the fit scale has a part the window can take
+    const bool stepReachesFit =
+            currentScale > 1.0 ? stepInFitUnits <= 1.0 : stepInFitUnits >= 1.0;
 
-    if (!atFit) {
-        const qreal fitScaleFactor = 1.0 / currentScale;
-        const bool reachesFit =
-                currentScale > 1.0 ? scaleFactor <= fitScaleFactor : scaleFactor >= fitScaleFactor;
-        // Without reaching the fit scale the whole step belongs to the image
-        scaleFactor = reachesFit ? scaleFactor / fitScaleFactor : 1.0;
-    }
+    QSize windowTargetSize;
+    qreal windowStep = 1.0;
+    qreal imageStep = requestedStep;
 
-    if (qAbs(scaleFactor - 1.0) > 0.0001) {
-        const qreal windowScaleFactor = scaleFactor > 1.0 ? growWindowForZoom(scaleFactor)
-                                                          : shrinkWindowForZoom(scaleFactor);
+    if ((atFit || stepReachesFit) && qAbs(stepInFitUnits - 1.0) > FIT_EPSILON) {
+        windowStep = stepInFitUnits > 1.0
+                ? planGrowWindowForZoom(stepInFitUnits, windowTargetSize)
+                : planShrinkWindowForZoom(stepInFitUnits, windowTargetSize);
 
-        if (qAbs(windowScaleFactor - 1.0) > 0.0001) {
-            // The resize refitted the image, so only what the window could not take is left over
-            imageScaleFactor = scaleFactor / windowScaleFactor;
-        } else if (!atFit) {
-            // The window stays as it is, the image just goes back to the fit scale
-            imageScaleFactor = 1.0 / currentScale;
+        if (qAbs(windowStep - 1.0) > FIT_EPSILON) {
+            // The resize refits the image, so it takes only what the window could not, and
+            // never less than the fit scale it lands on
+            imageStep = qMax(stepInFitUnits / windowStep, 1.0);
+        } else {
+            windowStep = 1.0;
+            // The window stays as it is, so the image goes back to the fit scale at most
+            if (!atFit)
+                imageStep = 1.0 / currentScale;
         }
     }
 
+    const bool windowMoves = qAbs(windowStep - 1.0) > FIT_EPSILON;
+
+    // Don't zoom too far, dude. Judged before the window is touched, so a step that gets
+    // rejected leaves the window where it was instead of resized for an image that did not zoom
+    const qreal resultingScale = windowMoves ? imageStep : currentScale * imageStep;
+    if (resultingScale >= MAX_ZOOM_SCALE || resultingScale <= MIN_ZOOM_SCALE)
+        return;
+
+    if (windowMoves) {
+        // Only a growing window is worth coming back to: a shrinking one keeps the floor it is
+        // heading for, which is what the next step has to shrink towards again
+        if (stepInFitUnits > 1.0)
+            rememberWindowSizeBeforeGrowing(preZoomWindowSize, window());
+        applyZoomWindowResize(windowTargetSize);
+    }
+
     // The window took care of the whole step
-    if (qAbs(imageScaleFactor - 1.0) < 0.0001)
+    if (qAbs(imageStep - 1.0) < FIT_EPSILON)
         return;
 
     // The window is resized around its center, so the point under the cursor sits elsewhere
@@ -455,26 +485,13 @@ void QVGraphicsView::zoom(qreal scaleFactor, QPoint pos)
     if (cursorZoom)
         pos = viewport()->mapFromGlobal(globalPos);
 
-    scaleFactor = imageScaleFactor;
-
-    // don't zoom too far out, dude
-    currentScale *= scaleFactor;
-    if (currentScale >= 500 || currentScale <= 0.01) {
-        currentScale *= qPow(scaleFactor, -1);
-        return;
-    }
-
-    updateFilteringMode();
-
     if (pos != lastZoomEventPos) {
         lastZoomEventPos = pos;
         lastZoomRoundingError = QPointF();
     }
     const QPointF scenePos = mapToScene(pos) - lastZoomRoundingError;
 
-    zoomBasisScaleFactor *= scaleFactor;
-    setTransform(QTransform(zoomBasis).scale(zoomBasisScaleFactor, zoomBasisScaleFactor));
-    absoluteTransform.scale(scaleFactor, scaleFactor);
+    applyRelativeZoom(imageStep);
 
     // If we have a point to zoom towards, the mouse is on top of the viewport,
     // and cursor zooming is enabled, anchor the zoom to the point under the cursor
@@ -544,7 +561,16 @@ void QVGraphicsView::applyZoomWindowResize(const QSize &targetSize)
     lastZoomRoundingError = QPointF();
 }
 
-qreal QVGraphicsView::growWindowForZoom(qreal scaleFactor)
+// A window resized by hand is no longer the size zooming comes back to
+static void forgetWindowSizeIfShrunk(QSize &recordedSize, const QSize &currentSize)
+{
+    if (recordedSize.isValid()
+        && (currentSize.width() < recordedSize.width()
+            || currentSize.height() < recordedSize.height()))
+        recordedSize = QSize();
+}
+
+qreal QVGraphicsView::planGrowWindowForZoom(qreal scaleFactor, QSize &targetSize)
 {
     QWidget *viewWindow = window();
     if (!viewWindow || isOriginalSize || !getCurrentFileDetails().isPixmapLoaded)
@@ -558,7 +584,7 @@ qreal QVGraphicsView::growWindowForZoom(qreal scaleFactor)
         return 1.0;
 
     // When the fit is locked to the actual size, the image doesn't follow the window size
-    if (qAbs(qAbs(absoluteTransform.m11()) - 1.0) < 0.0001)
+    if (qAbs(qAbs(absoluteTransform.m11()) - 1.0) < FIT_EPSILON)
         return 1.0;
 
     const QSize currentSize = viewWindow->size();
@@ -570,23 +596,23 @@ qreal QVGraphicsView::growWindowForZoom(qreal scaleFactor)
     // either dimension reaches the screen instead of stretching the other one towards it
     const qreal availableScaleFactor = qMin(maximumSize.width() / qreal(currentSize.width()),
                                             maximumSize.height() / qreal(currentSize.height()));
-    const qreal appliedScaleFactor = qMin(scaleFactor, availableScaleFactor);
-
-    QSize targetSize(qRound(currentSize.width() * appliedScaleFactor),
-                     qRound(currentSize.height() * appliedScaleFactor));
-    targetSize = targetSize.boundedTo(maximumSize);
     // A window that is already as large as the screen can't grow any further
-    if (targetSize == currentSize)
+    if (availableScaleFactor <= 1.0)
         return 1.0;
 
-    if (!preZoomWindowSize.isValid())
-        preZoomWindowSize = currentSize;
+    const qreal appliedScaleFactor = qMin(scaleFactor, availableScaleFactor);
 
-    applyZoomWindowResize(targetSize);
+    QSize plannedSize(qRound(currentSize.width() * appliedScaleFactor),
+                      qRound(currentSize.height() * appliedScaleFactor));
+    plannedSize = plannedSize.boundedTo(maximumSize);
+    if (plannedSize == currentSize)
+        return 1.0;
+
+    targetSize = plannedSize;
     return appliedScaleFactor;
 }
 
-qreal QVGraphicsView::shrinkWindowForZoom(qreal scaleFactor)
+qreal QVGraphicsView::planShrinkWindowForZoom(qreal scaleFactor, QSize &targetSize)
 {
     QWidget *viewWindow = window();
     if (!viewWindow || isOriginalSize || !getCurrentFileDetails().isPixmapLoaded)
@@ -605,14 +631,8 @@ qreal QVGraphicsView::shrinkWindowForZoom(qreal scaleFactor)
     const QSize currentSize = viewWindow->size();
 
     // A window resized by hand is no longer the size zooming comes back to
-    if (preZoomWindowSize.isValid()
-        && (currentSize.width() < preZoomWindowSize.width()
-            || currentSize.height() < preZoomWindowSize.height()))
-        preZoomWindowSize = QSize();
-    if (zoomWindowFittedSize.isValid()
-        && (currentSize.width() < zoomWindowFittedSize.width()
-            || currentSize.height() < zoomWindowFittedSize.height()))
-        zoomWindowFittedSize = QSize();
+    forgetWindowSizeIfShrunk(preZoomWindowSize, currentSize);
+    forgetWindowSizeIfShrunk(zoomWindowFittedSize, currentSize);
 
     // The window goes back to the size it had before it grew, or else to the size it was given
     // for this image, and never below it: from there on only the image shrinks
@@ -625,17 +645,17 @@ qreal QVGraphicsView::shrinkWindowForZoom(qreal scaleFactor)
                                         floorSize.height() / qreal(currentSize.height()));
     const qreal appliedScaleFactor = qMax(scaleFactor, floorScaleFactor);
 
-    QSize targetSize(qRound(currentSize.width() * appliedScaleFactor),
-                     qRound(currentSize.height() * appliedScaleFactor));
-    targetSize = targetSize.expandedTo(viewWindow->minimumSize()).boundedTo(currentSize);
+    QSize plannedSize(qRound(currentSize.width() * appliedScaleFactor),
+                      qRound(currentSize.height() * appliedScaleFactor));
+    plannedSize = plannedSize.expandedTo(viewWindow->minimumSize()).boundedTo(currentSize);
     // Land on the floor exactly instead of a pixel short of it
-    targetSize = targetSize.expandedTo(floorSize).boundedTo(currentSize);
+    plannedSize = plannedSize.expandedTo(floorSize).boundedTo(currentSize);
 
     // The window is as small as it can get, so the rest of the step belongs to the image
-    if (targetSize == currentSize)
+    if (plannedSize == currentSize)
         return 1.0;
 
-    applyZoomWindowResize(targetSize);
+    targetSize = plannedSize;
     return appliedScaleFactor;
 }
 
@@ -797,7 +817,7 @@ void QVGraphicsView::fullPixmapLoaded()
             absoluteTransform.m22() * fitBasisPixmapSize.height() / qreal(fullSize.height()));
     fitBasisPixmapSize = fullSize;
 
-    if (qAbs(currentScale - 1.0) < 0.0001)
+    if (isAtFit())
         updateLoadedPixmapItem();
     else if (qvGetSettingBool(SettingsManager::Setting::ScalingEnabled))
         scaleExpensively();
@@ -816,19 +836,34 @@ void QVGraphicsView::resetScale()
         expensiveScaleTimerNew->start();
 }
 
+// A scale within FIT_EPSILON of the fit scale is the fit scale, which is the only scale a zoom
+// step hands over to the window
+bool QVGraphicsView::isAtFit() const
+{
+    return qAbs(currentScale - 1.0) <= FIT_EPSILON;
+}
+
+// The image keeps the zoom it had while the window is refitted and starts over, so both are
+// moved by a factor of what is displayed right now
+void QVGraphicsView::applyRelativeZoom(qreal relativeFactor)
+{
+    currentScale *= relativeFactor;
+    updateFilteringMode();
+
+    zoomBasisScaleFactor *= relativeFactor;
+    setTransform(QTransform(zoomBasis).scale(zoomBasisScaleFactor, zoomBasisScaleFactor));
+    absoluteTransform.scale(relativeFactor, relativeFactor);
+}
+
 // Zooms the image to a scale relative to the fit, without touching the window size the way
 // zoom() does, so a scale can be restored for an image that has just been loaded
 void QVGraphicsView::applyScale(qreal scaleFactor)
 {
-    if (qAbs(scaleFactor - 1.0) <= 0.0001 || isOriginalSize)
+    if (qAbs(scaleFactor - 1.0) <= FIT_EPSILON || isOriginalSize)
         return;
 
-    currentScale = scaleFactor;
-    updateFilteringMode();
-
-    zoomBasisScaleFactor = scaleFactor;
-    setTransform(QTransform(zoomBasis).scale(scaleFactor, scaleFactor));
-    absoluteTransform.scale(scaleFactor, scaleFactor);
+    // The image has just been refitted, so the whole scale goes on in one step
+    applyRelativeZoom(scaleFactor / currentScale);
 
     centerOn(loadedPixmapItem);
 
@@ -858,8 +893,13 @@ void QVGraphicsView::restoreZoom(qreal absoluteScale, bool originalSizeMode)
     const qreal targetScale = qMin(absoluteScale, maximumScaleOnScreen());
     const qreal zoomScale = targetScale / fitScale;
 
-    if (zoomScale > 1.0)
-        growWindowForZoom(zoomScale);
+    if (zoomScale > 1.0) {
+        QSize windowTargetSize;
+        if (qAbs(planGrowWindowForZoom(zoomScale, windowTargetSize) - 1.0) > FIT_EPSILON) {
+            rememberWindowSizeBeforeGrowing(preZoomWindowSize, window());
+            applyZoomWindowResize(windowTargetSize);
+        }
+    }
 
     // Resizing the window refits the image, so what is left over is measured against the new fit
     applyScale(targetScale / absoluteTransform.m11());

@@ -32,7 +32,7 @@ public:
 
     void zoomOut(const QPoint &pos = QPoint(-1, -1));
 
-    void zoom(qreal scaleFactor, QPoint pos = QPoint(-1, -1));
+    void zoom(qreal requestedStep, QPoint pos = QPoint(-1, -1));
 
     void scaleExpensively();
     void makeUnscaled();
@@ -123,12 +123,19 @@ private:
 
     void applyScale(qreal scaleFactor);
 
+    // Puts a zoom step on the image itself, on top of the transform the view already has
+    void applyRelativeZoom(qreal relativeFactor);
+
     void setOrientedTransform(bool mirrored, bool flipped, const QTransform &base);
 
-    // Both return the part of the step the window took, or 1.0 when it was not resized and the
-    // step is left to the image
-    qreal growWindowForZoom(qreal scaleFactor);
-    qreal shrinkWindowForZoom(qreal scaleFactor);
+    bool isAtFit() const;
+
+    // Both work out the part of a zoom step the window can take and write the size it would move
+    // to, without resizing anything: a step that ends past the zoom limits is rejected before the
+    // window is touched. They return the part of the step the window takes, or 1.0 when the step
+    // is left to the image
+    qreal planGrowWindowForZoom(qreal scaleFactor, QSize &targetSize);
+    qreal planShrinkWindowForZoom(qreal scaleFactor, QSize &targetSize);
 
     void applyZoomWindowResize(const QSize &targetSize);
 
@@ -140,6 +147,14 @@ private:
 
     constexpr static int MARGIN = -2;
     constexpr static qreal MAX_EXPENSIVE_SCALING_SIZE = 3;
+
+    // A scale within this much of the fit scale counts as being at it, which is the only scale
+    // the window is resized at
+    constexpr static qreal FIT_EPSILON = 0.0001;
+
+    // How far the image may zoom, relative to the fit scale
+    constexpr static qreal MAX_ZOOM_SCALE = 500;
+    constexpr static qreal MIN_ZOOM_SCALE = 0.01;
 
     // Set to too high a value to activate for now...
     constexpr static qreal MAX_FILTERING_SIZE = 5000;
