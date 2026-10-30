@@ -848,14 +848,40 @@ void QVGraphicsView::restoreZoom(qreal absoluteScale, bool originalSizeMode)
         return;
     }
 
-    // The saved scale is the whole magnification, so it goes against the fit this window has just
-    // taken. Replaying it through zoom() lets the window grow for the part it can take the way
-    // scrolling would have, instead of leaving a cut off image in a small window.
     const qreal fitScale = absoluteTransform.m11();
     if (absoluteScale <= 0 || fitScale <= 0)
         return;
 
-    zoom(absoluteScale / fitScale);
+    // A zoom the screen cannot show would only come back cut off, so it is capped first. What is
+    // left goes where scrolling would have put it: the window grows for the part it can hold, and
+    // only what the window cannot take stays on the image.
+    const qreal targetScale = qMin(absoluteScale, maximumScaleOnScreen());
+    const qreal zoomScale = targetScale / fitScale;
+
+    if (zoomScale > 1.0)
+        growWindowForZoom(zoomScale);
+
+    // Resizing the window refits the image, so what is left over is measured against the new fit
+    applyScale(targetScale / absoluteTransform.m11());
+}
+
+// The largest zoom the screen has room for, so that putting a saved zoom back never leaves part of
+// the image off screen. It is measured from the size the image takes up in the view right now, and
+// the room left is what the screen keeps once the window frame and the view's border are taken off.
+qreal QVGraphicsView::maximumScaleOnScreen() const
+{
+    const QRectF displayed = mapFromScene(loadedPixmapItem->sceneBoundingRect()).boundingRect();
+    if (displayed.isEmpty())
+        return absoluteTransform.m11();
+
+    const QSize room = screenForWindow(window())->availableGeometry().size()
+                       - (window()->frameGeometry().size() - viewport()->size());
+    if (room.isEmpty())
+        return absoluteTransform.m11();
+
+    const qreal roomFactor =
+            qMin(room.width() / displayed.width(), room.height() / displayed.height());
+    return absoluteTransform.m11() * roomFactor;
 }
 
 void QVGraphicsView::originalSize()

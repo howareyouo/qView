@@ -40,6 +40,7 @@ public:
     void resetScale();
     void originalSize();
     void restoreZoom(qreal absoluteScale, bool originalSizeMode);
+    qreal maximumScaleOnScreen() const;
 
     void restoreWindowSize();
 
