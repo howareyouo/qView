@@ -752,6 +752,12 @@ void QVGraphicsView::animatedFrameChanged(QRect rect)
 
 void QVGraphicsView::updateLoadedPixmapItem()
 {
+    // The zoom the image was at, to be reused for the one that is replacing it. It is relative to
+    // the fit scale, so it means the same thing on an image of any size.
+    const qreal previousScale = currentScale;
+    const bool reuseScale =
+            qvGetSettingBool(SettingsManager::Setting::RememberZoom) && !isOriginalSize;
+
     // set pixmap and offset
     loadedPixmapItem->setPixmap(getLoadedPixmap());
     scaledSize = loadedPixmapItem->boundingRect().size().toSize();
@@ -759,6 +765,10 @@ void QVGraphicsView::updateLoadedPixmapItem()
     resetScale();
 
     emit updatedLoadedPixmapItem();
+
+    // Only once the window has resized itself for the new image, since resizing refits the image
+    if (reuseScale)
+        applyScale(previousScale);
 }
 
 void QVGraphicsView::fullPixmapLoaded()
@@ -801,6 +811,26 @@ void QVGraphicsView::resetScale()
         return;
 
     fitInViewMarginless(loadedPixmapItem);
+
+    if (qvGetSettingBool(SettingsManager::Setting::ScalingEnabled))
+        expensiveScaleTimerNew->start();
+}
+
+// Zooms the image to a scale relative to the fit, without touching the window size the way
+// zoom() does, so a scale can be restored for an image that has just been loaded
+void QVGraphicsView::applyScale(qreal scaleFactor)
+{
+    if (qAbs(scaleFactor - 1.0) <= 0.0001 || isOriginalSize)
+        return;
+
+    currentScale = scaleFactor;
+    updateFilteringMode();
+
+    zoomBasisScaleFactor = scaleFactor;
+    setTransform(QTransform(zoomBasis).scale(scaleFactor, scaleFactor));
+    absoluteTransform.scale(scaleFactor, scaleFactor);
+
+    centerOn(loadedPixmapItem);
 
     if (qvGetSettingBool(SettingsManager::Setting::ScalingEnabled))
         expensiveScaleTimerNew->start();

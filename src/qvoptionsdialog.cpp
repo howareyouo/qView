@@ -209,6 +209,9 @@ void QVOptionsDialog::syncSettings(bool defaults, bool makeConnections)
     // cursorzoom
     syncCheckbox(ui->cursorZoomCheckbox, SettingsManager::Setting::CursorZoom, defaults,
                  makeConnections);
+    // rememberzoom
+    syncCheckbox(ui->rememberZoomCheckbox, SettingsManager::Setting::RememberZoom, defaults,
+                 makeConnections);
     // cropmode
     syncComboBox(ui->cropModeComboBox, SettingsManager::Setting::CropMode, defaults,
                  makeConnections);

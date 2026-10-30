@@ -114,6 +114,8 @@ private slots:
 private:
     void updateFilteringMode();
 
+    void applyScale(qreal scaleFactor);
+
     void setOrientedTransform(bool mirrored, bool flipped, const QTransform &base);
 
     // Both return the part of the step the window took, or 1.0 when it was not resized and the

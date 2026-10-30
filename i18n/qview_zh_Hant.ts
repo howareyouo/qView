@@ -1208,6 +1208,14 @@ No write permission or file is read-only.</source>
         <source>Frameless window</source>
         <translation>無邊框視窗</translation>
     </message>
+    <message>
+        <source>Remember zoom level</source>
+        <translation>記住縮放比例</translation>
+    </message>
+    <message>
+        <source>Keep the zoom level of the previous image when switching to another one</source>
+        <translation>切換圖片時保持目前的縮放比例</translation>
+    </message>
 </context>
 <context>
     <name>QVRenameDialog</name>

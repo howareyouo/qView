@@ -33,6 +33,7 @@ public:
         ScrollZoom,
         FractionalZoom,
         CursorZoom,
+        RememberZoom,
         CropMode,
         PastActualSizeEnabled,
         ColorSpaceConversion,

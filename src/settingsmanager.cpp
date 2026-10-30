@@ -43,6 +43,7 @@ static const SettingDefinition settingDefinitions[] = {
     { SettingsManager::Setting::ScrollZoom, 1, "scrollzoom" },
     { SettingsManager::Setting::FractionalZoom, false, "fractionalzoom" },
     { SettingsManager::Setting::CursorZoom, true, "cursorzoom" },
+    { SettingsManager::Setting::RememberZoom, false, "rememberzoom" },
     { SettingsManager::Setting::CropMode, 0, "cropmode" },
     { SettingsManager::Setting::PastActualSizeEnabled, true, "pastactualsizeenabled" },
     { SettingsManager::Setting::ColorSpaceConversion, 1, "colorspaceconversion" },
