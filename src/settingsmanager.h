@@ -132,8 +132,9 @@ public:
     bool getBool(Setting setting, bool defaults = false) const;
     int getInt(Setting setting, bool defaults = false) const;
     double getDouble(Setting setting, bool defaults = false) const;
-    const QString getString(Setting setting, bool defaults = false) const;
-    const QVariant getSetting(Setting setting, bool defaults = false) const;
+    QString getString(Setting setting, bool defaults = false) const;
+    // Returns a reference into the cache, so reading a setting does not copy the variant
+    const QVariant &getSetting(Setting setting, bool defaults = false) const;
     bool isDefault(Setting setting) const;
 
     // Direct enum-based access to setting data

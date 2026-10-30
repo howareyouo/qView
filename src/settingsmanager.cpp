@@ -196,7 +196,7 @@ const QString &SettingsManager::getSettingKey(Setting setting)
     return empty;
 }
 
-const QVariant SettingsManager::getSetting(Setting setting, bool defaults) const
+const QVariant &SettingsManager::getSetting(Setting setting, bool defaults) const
 {
     const SettingData &data = getSettingData(setting);
     if (!defaults && !data.value.isNull())
@@ -206,34 +206,22 @@ const QVariant SettingsManager::getSetting(Setting setting, bool defaults) const
 
 bool SettingsManager::getBool(Setting setting, bool defaults) const
 {
-    auto value = getSetting(setting, defaults);
-    if (value.canConvert<bool>())
-        return value.toBool();
-    return false;
+    return getSetting(setting, defaults).toBool();
 }
 
 int SettingsManager::getInt(Setting setting, bool defaults) const
 {
-    auto value = getSetting(setting, defaults);
-    if (value.canConvert<int>())
-        return value.toInt();
-    return 0;
+    return getSetting(setting, defaults).toInt();
 }
 
 double SettingsManager::getDouble(Setting setting, bool defaults) const
 {
-    auto value = getSetting(setting, defaults);
-    if (value.canConvert<double>())
-        return value.toDouble();
-    return 0.0;
+    return getSetting(setting, defaults).toDouble();
 }
 
-const QString SettingsManager::getString(Setting setting, bool defaults) const
+QString SettingsManager::getString(Setting setting, bool defaults) const
 {
-    auto value = getSetting(setting, defaults);
-    if (value.canConvert<QString>())
-        return value.toString();
-    return "";
+    return getSetting(setting, defaults).toString();
 }
 
 bool SettingsManager::isDefault(Setting setting) const

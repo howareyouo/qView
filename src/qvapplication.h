@@ -145,7 +145,7 @@ inline double qvGetSettingDouble(SettingsManager::Setting setting)
 {
     return qvApp->getSettingsManager().getDouble(setting);
 }
-inline const QString qvGetSettingString(SettingsManager::Setting setting)
+inline QString qvGetSettingString(SettingsManager::Setting setting)
 {
     return qvApp->getSettingsManager().getString(setting);
 }
