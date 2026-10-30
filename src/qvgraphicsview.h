@@ -39,7 +39,7 @@ public:
 
     void resetScale();
     void originalSize();
-    void restoreZoom(qreal scaleFactor, bool originalSizeMode);
+    void restoreZoom(qreal absoluteScale, bool originalSizeMode);
 
     void restoreWindowSize();
 
@@ -64,9 +64,9 @@ public:
 
     bool isResetScale() const { return !isOriginalSize && qFuzzyCompare(currentScale, 1.0); }
 
-    // The zoom relative to the fit, which means the same thing on any image, so it can be saved
-    // and put back on whatever is loaded next
-    qreal getCurrentScale() const { return currentScale; }
+    // The displayed size over the image's own size: what the window and the zoom of the image
+    // add up to, which is the magnification a new session has to put back
+    qreal getCurrentAbsoluteScale() const { return absoluteTransform.m11(); }
     bool getIsOriginalSize() const { return isOriginalSize; }
 
 signals:

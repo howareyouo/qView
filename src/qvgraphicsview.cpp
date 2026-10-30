@@ -838,15 +838,24 @@ void QVGraphicsView::applyScale(qreal scaleFactor)
 
 // Puts the zoom a previous session ended at back on an image that has just been loaded. Has to
 // run after the window has been given the new image's size, since that refits the image.
-void QVGraphicsView::restoreZoom(qreal scaleFactor, bool originalSizeMode)
+void QVGraphicsView::restoreZoom(qreal absoluteScale, bool originalSizeMode)
 {
     if (!getCurrentFileDetails().isPixmapLoaded)
         return;
 
-    if (originalSizeMode)
+    if (originalSizeMode) {
         originalSize();
-    else
-        applyScale(scaleFactor);
+        return;
+    }
+
+    // The saved scale is the whole magnification, so it goes against the fit this window has just
+    // taken. Replaying it through zoom() lets the window grow for the part it can take the way
+    // scrolling would have, instead of leaving a cut off image in a small window.
+    const qreal fitScale = absoluteTransform.m11();
+    if (absoluteScale <= 0 || fitScale <= 0)
+        return;
+
+    zoom(absoluteScale / fitScale);
 }
 
 void QVGraphicsView::originalSize()
