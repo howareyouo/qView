@@ -783,6 +783,14 @@ static bool hasSameShape(const QSize &previousSize, const QSize &newSize)
     return qAbs(previousRatio - newRatio) <= qMax(previousRatio, newRatio) * 0.01;
 }
 
+// The image size a zoom record is written for, which is the full-resolution one while a preview
+// decode is on screen
+static QSize imageSizeForZoomRecord(const QVImageCore::FileDetails &fileDetails)
+{
+    return fileDetails.fullPixmapSize.isEmpty() ? fileDetails.loadedPixmapSize
+                                                : fileDetails.fullPixmapSize;
+}
+
 void QVGraphicsView::updateLoadedPixmapItem()
 {
     // The zoom the image was at, to be reused for the one that is replacing it. It is relative to
@@ -870,6 +878,40 @@ void QVGraphicsView::applyRelativeZoom(qreal relativeFactor)
     absoluteTransform.scale(relativeFactor, relativeFactor);
 }
 
+// What the next session needs to put this zoom back: the shape of the image it belongs to and how
+// far past the fit scale it was zoomed, written as "16:9,1.2x". The shape is the ratio in its
+// lowest terms, and the zoom is a multiple of the fit scale, so neither depends on the image size or
+// the window it was shown in.
+QString QVGraphicsView::getZoomRecord() const
+{
+    const QVImageCore::FileDetails &fileDetails = getCurrentFileDetails();
+    const QSize imageSize = imageSizeForZoomRecord(fileDetails);
+    if (!fileDetails.isPixmapLoaded || imageSize.isEmpty())
+        return QString();
+
+    // The ratio in its lowest terms, so the record reads the way the shape is known
+    int divisor = imageSize.width();
+    int remainder = imageSize.height();
+    while (remainder != 0) {
+        const int nextRemainder = divisor % remainder;
+        divisor = remainder;
+        remainder = nextRemainder;
+    }
+
+    // At the actual size the zoom is remembered by the flag that goes with this record instead
+    QString zoom = isOriginalSize ? QStringLiteral("1") : QString::number(currentScale, 'f', 3);
+    // Padding zeros would only make the record harder to read
+    while (zoom.endsWith(u'0'))
+        zoom.chop(1);
+    if (zoom.endsWith(u'.'))
+        zoom.chop(1);
+
+    return QStringLiteral("%1:%2,%3x")
+            .arg(imageSize.width() / divisor)
+            .arg(imageSize.height() / divisor)
+            .arg(zoom);
+}
+
 // Zooms the image to a scale relative to the fit, without touching the window size the way
 // zoom() does, so a scale can be restored for an image that has just been loaded
 void QVGraphicsView::applyScale(qreal scaleFactor)
@@ -918,7 +960,7 @@ void QVGraphicsView::applyZoomRelativeToFit(qreal scaleFactor)
 
 // Puts the zoom a previous session ended at back on an image that has just been loaded. Has to
 // run after the window has been given the new image's size, since that refits the image.
-void QVGraphicsView::restoreZoom(qreal absoluteScale, bool originalSizeMode)
+void QVGraphicsView::restoreZoom(const QString &zoomRecord, bool originalSizeMode)
 {
     if (!getCurrentFileDetails().isPixmapLoaded)
         return;
@@ -928,11 +970,31 @@ void QVGraphicsView::restoreZoom(qreal absoluteScale, bool originalSizeMode)
         return;
     }
 
-    const qreal fitScale = absoluteTransform.m11();
-    if (absoluteScale <= 0 || fitScale <= 0)
+    // The record holds the shape of the image and the zoom that belonged to it, as getZoomRecord()
+    // writes them. A record from before the shape was saved holds the absolute scale alone, which
+    // the missing "x" tells apart
+    const QStringList parts = zoomRecord.split(u',');
+    const QString zoomPart = parts.last().trimmed();
+    const bool zoomIsRelativeToFit = zoomPart.endsWith(u'x', Qt::CaseInsensitive);
+    const qreal zoomValue =
+            (zoomIsRelativeToFit ? zoomPart.chopped(1) : zoomPart).trimmed().toDouble();
+    if (zoomValue <= 0)
         return;
 
-    applyZoomRelativeToFit(absoluteScale / fitScale);
+    // The zoom only means the same thing on an image framed the same way
+    if (parts.size() == 2) {
+        const QStringList sides = parts.first().split(u':');
+        const QSize recordedSize =
+                sides.size() == 2 ? QSize(sides.at(0).toInt(), sides.at(1).toInt()) : QSize();
+        if (!hasSameShape(recordedSize, imageSizeForZoomRecord(getCurrentFileDetails())))
+            return;
+    }
+
+    const qreal fitScale = absoluteTransform.m11();
+    if (fitScale <= 0)
+        return;
+
+    applyZoomRelativeToFit(zoomIsRelativeToFit ? zoomValue : zoomValue / fitScale);
 }
 
 // The largest zoom the screen has room for, so that putting a saved zoom back never leaves part of

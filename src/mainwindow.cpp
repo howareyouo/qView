@@ -168,7 +168,7 @@ MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent), ui(new Ui::MainWi
     // remembered. It's applied once this window has loaded its first image.
     zoomRestorePending =
             qvApp->getSettingsManager().getBool(SettingsManager::Setting::RememberZoom);
-    zoomRestoreScale = settings.value("lastzoom", 0.0).toReal();
+    zoomRestoreRecord = settings.value("lastzoom").toString();
     zoomRestoreOriginalSize = settings.value("lastzoomactualsize", false).toBool();
 
     // Exiting without closing the window skips closeEvent, so save the zoom on the way out too
@@ -248,7 +248,7 @@ void MainWindow::saveZoom()
         return;
 
     QSettings settings;
-    settings.setValue("lastzoom", graphicsView->getCurrentAbsoluteScale());
+    settings.setValue("lastzoom", graphicsView->getZoomRecord());
     settings.setValue("lastzoomactualsize", graphicsView->getIsOriginalSize());
 }
 
@@ -503,7 +503,7 @@ void MainWindow::fileChanged()
     // after that, and it only happens for the first image this window shows.
     if (zoomRestorePending) {
         zoomRestorePending = false;
-        graphicsView->restoreZoom(zoomRestoreScale, zoomRestoreOriginalSize);
+        graphicsView->restoreZoom(zoomRestoreRecord, zoomRestoreOriginalSize);
     }
 
     // repaint to handle error message

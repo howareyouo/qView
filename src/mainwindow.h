@@ -166,7 +166,7 @@ private:
 
     // Zoom the last session ended at, put back on the first image this window loads
     bool zoomRestorePending;
-    qreal zoomRestoreScale;
+    QString zoomRestoreRecord;
     bool zoomRestoreOriginalSize;
 };
 
