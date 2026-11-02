@@ -94,52 +94,61 @@ MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent), ui(new Ui::MainWi
     // Context menu
     auto &actionManager = qvApp->getActionManager();
 
-    contextMenu = new QMenu(this);
+    {
+        QV_PROFILE_SCOPE("startup: window context menu");
+        contextMenu = new QMenu(this);
 
-    actionManager.addCloneOfAction(contextMenu, "open");
-    actionManager.addCloneOfAction(contextMenu, "openurl");
-    contextMenu->addMenu(actionManager.buildRecentsMenu(true, contextMenu));
-    contextMenu->addMenu(actionManager.buildOpenWithMenu(contextMenu));
-    actionManager.addCloneOfAction(contextMenu, "opencontainingfolder");
-    contextMenu->addSeparator();
-    actionManager.addCloneOfAction(contextMenu, "rename");
-    actionManager.addCloneOfAction(contextMenu, "delete");
-    contextMenu->addSeparator();
-    actionManager.addCloneOfAction(contextMenu, "nextfile");
-    actionManager.addCloneOfAction(contextMenu, "previousfile");
-    contextMenu->addSeparator();
-    contextMenu->addMenu(actionManager.buildViewMenu(true, contextMenu, true));
-    contextMenu->addMenu(actionManager.buildToolsMenu(true, contextMenu, false));
-    contextMenu->addMenu(actionManager.buildHelpMenu(true, contextMenu));
-    contextMenu->addSeparator();
-    actionManager.addCloneOfAction(contextMenu, "options");
+        actionManager.addCloneOfAction(contextMenu, "open");
+        actionManager.addCloneOfAction(contextMenu, "openurl");
+        contextMenu->addMenu(actionManager.buildRecentsMenu(true, contextMenu));
+        contextMenu->addMenu(actionManager.buildOpenWithMenu(contextMenu));
+        actionManager.addCloneOfAction(contextMenu, "opencontainingfolder");
+        contextMenu->addSeparator();
+        actionManager.addCloneOfAction(contextMenu, "rename");
+        actionManager.addCloneOfAction(contextMenu, "delete");
+        contextMenu->addSeparator();
+        actionManager.addCloneOfAction(contextMenu, "nextfile");
+        actionManager.addCloneOfAction(contextMenu, "previousfile");
+        contextMenu->addSeparator();
+        contextMenu->addMenu(actionManager.buildViewMenu(true, contextMenu, true));
+        contextMenu->addMenu(actionManager.buildToolsMenu(true, contextMenu, false));
+        contextMenu->addMenu(actionManager.buildHelpMenu(true, contextMenu));
+        contextMenu->addSeparator();
+        actionManager.addCloneOfAction(contextMenu, "options");
 
-    connect(contextMenu, &QMenu::triggered, this, [this](QAction *triggeredAction) {
-        ActionManager::actionTriggered(triggeredAction, this);
-    });
-
-    // Initialize menubar
-    setMenuBar(actionManager.buildMenuBar(this));
-    // Stop actions conflicting with the window's actions
-    const auto menubarActions = ActionManager::getAllNestedActions(menuBar()->actions());
-    for (auto action : menubarActions) {
-        action->setShortcutContext(Qt::WidgetShortcut);
+        connect(contextMenu, &QMenu::triggered, this, [this](QAction *triggeredAction) {
+            ActionManager::actionTriggered(triggeredAction, this);
+        });
     }
-    connect(menuBar(), &QMenuBar::triggered, this, [this](QAction *triggeredAction) {
-        ActionManager::actionTriggered(triggeredAction, this);
-    });
 
-    // Add all actions to this window so keyboard shortcuts are always triggered
-    // using virtual menu to hold them so i can connect to the triggered signal
-    virtualMenu = new QMenu(this);
-    const auto &actionKeys = actionManager.getActionLibrary().keys();
-    for (const QString &key : actionKeys) {
-        actionManager.addCloneOfAction(virtualMenu, key);
+    {
+        // Initialize menubar
+        QV_PROFILE_SCOPE("startup: window menubar");
+        setMenuBar(actionManager.buildMenuBar(this));
+        // Stop actions conflicting with the window's actions
+        const auto menubarActions = ActionManager::getAllNestedActions(menuBar()->actions());
+        for (auto action : menubarActions) {
+            action->setShortcutContext(Qt::WidgetShortcut);
+        }
+        connect(menuBar(), &QMenuBar::triggered, this, [this](QAction *triggeredAction) {
+            ActionManager::actionTriggered(triggeredAction, this);
+        });
     }
-    addActions(virtualMenu->actions());
-    connect(virtualMenu, &QMenu::triggered, this, [this](QAction *triggeredAction) {
-        ActionManager::actionTriggered(triggeredAction, this);
-    });
+
+    {
+        // Add all actions to this window so keyboard shortcuts are always triggered
+        // using virtual menu to hold them so i can connect to the triggered signal
+        QV_PROFILE_SCOPE("startup: window virtual menu");
+        virtualMenu = new QMenu(this);
+        const auto &actionKeys = actionManager.getActionLibrary().keys();
+        for (const QString &key : actionKeys) {
+            actionManager.addCloneOfAction(virtualMenu, key);
+        }
+        addActions(virtualMenu->actions());
+        connect(virtualMenu, &QMenu::triggered, this, [this](QAction *triggeredAction) {
+            ActionManager::actionTriggered(triggeredAction, this);
+        });
+    }
 
     QVProfile::record("startup: window menus", startupTimer.nsecsElapsed());
     startupTimer.restart();
@@ -222,6 +231,8 @@ void MainWindow::contextMenuEvent(QContextMenuEvent *event)
 
 void MainWindow::showEvent(QShowEvent *event)
 {
+    QVProfile::milestone("startup: window shown");
+
     // Enable full size content view. With some Qt versions, this can break its restoreGeometry
     // functionality even if we enable this after. Presumably restoreGeometry saves data for
     // further processing after the window is shown, hence the timer here to queue this on the

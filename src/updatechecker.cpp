@@ -1,6 +1,7 @@
 #include "updatechecker.h"
 
 #include "qvapplication.h"
+#include "qvprofiler.h"
 
 #include <QMessageBox>
 #include <QPushButton>
@@ -9,6 +10,8 @@
 
 UpdateChecker::UpdateChecker(QObject *parent) : QObject(parent)
 {
+    QV_PROFILE_SCOPE("startup: update checker");
+
     latestVersionNum = -1.0;
 
     connect(&netAccessManager, &QNetworkAccessManager::finished, this, &UpdateChecker::readReply);

@@ -16,6 +16,7 @@
 #include <QGestureEvent>
 #include <QScreen>
 #include <QScrollBar>
+#include <QPaintEvent>
 
 QVGraphicsView::QVGraphicsView(QWidget *parent) : QGraphicsView(parent)
 {
@@ -247,6 +248,18 @@ void QVGraphicsView::mouseReleaseEvent(QMouseEvent *event)
     windowMoveStarted = false;
     QGraphicsView::mouseReleaseEvent(event);
     viewport()->setCursor(Qt::ArrowCursor);
+}
+
+void QVGraphicsView::paintEvent(QPaintEvent *event)
+{
+    // Only the first frame after launching matters for startup timing
+    static bool firstPaintRecorded = false;
+    if (!firstPaintRecorded) {
+        firstPaintRecorded = true;
+        QVProfile::milestone("startup: first paint");
+    }
+
+    QGraphicsView::paintEvent(event);
 }
 
 bool QVGraphicsView::event(QEvent *event)

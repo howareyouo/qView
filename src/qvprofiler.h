@@ -52,6 +52,38 @@ inline void record(const char *name, qint64 nanoseconds)
     sample.second++;
 }
 
+// Wall clock for milestones that happen outside a scope, for example "when did the window really
+// become visible" or "when did the first frame get painted". main() starts it, everything else
+// reads the elapsed value from it.
+inline QElapsedTimer &startupClock()
+{
+    static QElapsedTimer clock;
+    return clock;
+}
+
+inline void startStartupClock()
+{
+    startupClock().start();
+}
+
+inline qint64 sinceStartup()
+{
+    const QElapsedTimer &clock = startupClock();
+    return clock.isValid() ? clock.nsecsElapsed() : 0;
+}
+
+// Records a one-shot milestone as the time elapsed since startStartupClock()
+inline void milestone(const char *name)
+{
+    if (!isEnabled())
+        return;
+
+    QMutexLocker locker(&sampleMutex());
+    auto &sample = samples()[QString::fromLatin1(name)];
+    sample.first += sinceStartup();
+    sample.second++;
+}
+
 inline void dump()
 {
     if (!isEnabled())
