@@ -563,9 +563,10 @@ void QVImageCore::startPreloadDecode(const QString &filePath)
                 startPendingPreloadDecodes();
             });
 
+    // The size is left to the worker here; it is looked up while the file is decoded
     cacheFutureWatcher->setFuture(QtConcurrent::run(&QVImageCore::readFile, this, filePath,
                                                     getTargetColorSpace(), FolderScanParams(),
-                                                    previewTargetSize));
+                                                    previewTargetSize, -1));
 }
 
 void QVImageCore::addToCache(const ReadData &readData)
@@ -634,8 +635,10 @@ void QVImageCore::startFullDecode(const QString &filePath, const QColorSpace &ta
                 }
             });
 
+    // The size is left to the worker here; it is looked up while the file is decoded
     fullDecodeWatcher->setFuture(QtConcurrent::run(&QVImageCore::readFile, this, filePath,
-                                                   targetColorSpace, FolderScanParams(), QSize()));
+                                                   targetColorSpace, FolderScanParams(), QSize(),
+                                                   -1));
 }
 
 QString QVImageCore::getPixmapCacheKey(const QString &absoluteFilePath, const qint64 &fileSize,

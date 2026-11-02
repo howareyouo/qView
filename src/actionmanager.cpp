@@ -451,7 +451,7 @@ void ActionManager::updateRecentsMenu()
     static QHash<QString, QIcon> fileTypeIcons;
 
     updateIndexedCloneActions("recent", recentsListMaxLength, recentsList.length(),
-                              [this, &fileTypeIcons](int i, QAction *action) {
+                              [this](int i, QAction *action) {
                                   const auto recent = recentsList.value(i);
                                   action->setText(recent.fileName);
 
