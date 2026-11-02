@@ -12,6 +12,8 @@
 #include <QTimer>
 #include <QCache>
 #include <QElapsedTimer>
+#include <QPointer>
+#include <QScreen>
 
 #include <QColorSpace>
 
@@ -73,21 +75,26 @@ public:
         // True when this is the full-resolution decode replacing a shown preview;
         // never persisted in the cache
         bool isFullUpgrade = false;
+        // True when the format can animate at all; static formats skip the QMovie probe
+        bool mayAnimate = false;
+
+        // Cache key of this decode, computed once per read instead of on every cache access
+        QString cacheKey;
     };
 
     explicit QVImageCore(QObject *parent = nullptr);
 
     void loadFile(const QString &fileName, bool isReloading = false);
     ReadData readFile(const QString &fileName, const QColorSpace &targetColorSpace,
-                      const FolderScanParams &folderScanParams, QSize previewTargetSize = {});
+                      const FolderScanParams &folderScanParams, QSize previewTargetSize = {},
+                      qint64 fileSize = -1);
     void loadPixmap(const ReadData &readData);
     void closeImage();
-    QList<CompatibleFile> getCompatibleFiles(const QString &dirPath) const;
     void updateFolderInfo(QString dirPath = QString());
     void updateFolderInfoAsync(QString dirPath = QString());
     void requestCaching(const QColorSpace &targetColorSpace);
     void requestCachingFile(const QString &filePath, const QColorSpace &targetColorSpace);
-    void addToCache(const ReadData &&readImageAndFileInfo);
+    void addToCache(const ReadData &readImageAndFileInfo);
     static QString getPixmapCacheKey(const QString &absoluteFilePath, const qint64 &fileSize,
                                      const QColorSpace &targetColorSpace);
     QColorSpace getTargetColorSpace() const;
@@ -129,9 +136,34 @@ protected:
     FileDetails getEmptyFileDetails();
 
 private:
+    // The settings that shape the folder listing. A settings change only needs the folder to be
+    // scanned again when one of these differs from what the current listing was built with.
+    struct FolderScanSettings
+    {
+        int sortMode = 0;
+        bool sortDescending = false;
+        bool skipHidden = false;
+        bool allowMimeContentDetection = false;
+
+        bool operator==(const FolderScanSettings &other) const
+        {
+            return sortMode == other.sortMode && sortDescending == other.sortDescending
+                    && skipHidden == other.skipHidden
+                    && allowMimeContentDetection == other.allowMimeContentDetection;
+        }
+        bool operator!=(const FolderScanSettings &other) const { return !(*this == other); }
+    };
+
+    FolderScanSettings currentFolderScanSettings() const;
+
     FolderScanParams makeFolderScanParams(const QString &dirPath) const;
 
     void startFullDecode(const QString &filePath, const QColorSpace &targetColorSpace);
+
+    // Preload decoding: a small bounded queue keeps the file the user is opening from waiting
+    // behind the background decodes
+    void startPendingPreloadDecodes();
+    void startPreloadDecode(const QString &filePath);
 
     QPixmap loadedPixmap;
     QMovie loadedMovie;
@@ -152,6 +184,12 @@ private:
     QStringList lastFilesPreloaded;
     QStringList preloadFilesInProgress;
     QString waitingOnPreloadFile;
+    QStringList pendingPreloadFiles;
+    int preloadDecodesRunning = 0;
+
+    // What the current folder listing was built with, to tell whether a settings change
+    // actually invalidates it
+    mutable FolderScanSettings lastFolderScanSettings;
 
     int largestDimension;
 
@@ -162,6 +200,12 @@ private:
 
     // Files with a full-resolution decode currently running in the background
     QStringList fullDecodeFilesInProgress;
+
+    // Display color space cache: reading and parsing the screen ICC profile costs a file read
+    // and only changes when the window moves to another screen
+    mutable QPointer<QScreen> displayColorSpaceScreen;
+    mutable QColorSpace cachedDisplayColorSpace;
+    mutable bool displayColorSpaceCached = false;
 };
 
 #endif // QVIMAGECORE_H

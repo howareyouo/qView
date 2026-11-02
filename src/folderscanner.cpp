@@ -4,6 +4,7 @@
 #include <QCollator>
 #include <QDir>
 #include <QMimeDatabase>
+#include <QSet>
 #include <algorithm>
 #include <chrono>
 #include <random>
@@ -14,11 +15,24 @@ FolderScanner::getCompatibleFilesForDir(const QString &dirPath, int sortMode, bo
 {
     QList<CompatibleFile> fileList;
 
-    QMimeDatabase mimeDb;
     const auto &extensions = qvApp->getFileExtensionList();
     const auto &mimeTypes = qvApp->getMimeTypeNameList();
 
-    QMimeDatabase::MatchMode mimeMatchMode =
+    // Matching used to compare every directory entry against every known extension with a
+    // case-insensitive endsWith(). Sets of lower case extensions and mime type names turn both
+    // of those into a single lookup per file name.
+    QSet<QString> extensionSet;
+    extensionSet.reserve(extensions.size());
+    for (const QString &extension : extensions)
+        extensionSet.insert(extension.toLower());
+
+    QSet<QString> mimeTypeSet;
+    mimeTypeSet.reserve(mimeTypes.size());
+    for (const QString &mimeType : mimeTypes)
+        mimeTypeSet.insert(mimeType);
+
+    QMimeDatabase mimeDb;
+    const QMimeDatabase::MatchMode mimeMatchMode =
             allowMimeContentDetection ? QMimeDatabase::MatchDefault : QMimeDatabase::MatchExtension;
 
     // skip hidden files if user wants to
@@ -26,21 +40,19 @@ FolderScanner::getCompatibleFilesForDir(const QString &dirPath, int sortMode, bo
     if (!skipHidden)
         filters |= QDir::Hidden;
 
-    const QFileInfoList currentFolder = QDir(dirPath).entryInfoList(filters, QDir::Unsorted);
-    for (const QFileInfo &fileInfo : currentFolder) {
-        bool matched = false;
-        const QString absoluteFilePath = fileInfo.absoluteFilePath();
-        const QString fileName = fileInfo.fileName();
-        for (const QString &extension : extensions) {
-            if (fileName.endsWith(extension, Qt::CaseInsensitive)) {
-                matched = true;
-                break;
-            }
-        }
+    // Only the names are listed; a file is inspected further once it is known to be compatible
+    const QDir dir(dirPath);
+    const QStringList fileNames = dir.entryList(filters, QDir::Unsorted);
+    for (const QString &fileName : fileNames) {
+        // This is the suffix the endsWith() comparisons used to match against
+        const qsizetype dotIndex = fileName.lastIndexOf(u'.');
+        bool matched = dotIndex >= 0 && extensionSet.contains(fileName.mid(dotIndex).toLower());
+
+        const QString absoluteFilePath = dir.filePath(fileName);
         QString mimeType;
         if (!matched || sortMode == SettingsManager::SortByType) {
             mimeType = mimeDb.mimeTypeForFile(absoluteFilePath, mimeMatchMode).name();
-            matched |= mimeTypes.contains(mimeType);
+            matched |= mimeTypeSet.contains(mimeType);
         }
 
         // ignore macOS ._ metadata files
@@ -48,17 +60,19 @@ FolderScanner::getCompatibleFilesForDir(const QString &dirPath, int sortMode, bo
             matched = false;
         }
 
-        if (matched) {
-            fileList.append({ absoluteFilePath, fileName,
-                              sortMode == SettingsManager::SortByLastModified
-                                      ? fileInfo.lastModified().toMSecsSinceEpoch()
-                                      : 0,
-                              sortMode == SettingsManager::SortByDateCreated
-                                      ? fileInfo.birthTime().toMSecsSinceEpoch()
-                                      : 0,
-                              sortMode == SettingsManager::SortBySize ? fileInfo.size() : 0,
-                              sortMode == SettingsManager::SortByType ? mimeType : QString() });
-        }
+        if (!matched)
+            continue;
+
+        const QFileInfo fileInfo(absoluteFilePath);
+        fileList.append({ absoluteFilePath, fileName,
+                          sortMode == SettingsManager::SortByLastModified
+                                  ? fileInfo.lastModified().toMSecsSinceEpoch()
+                                  : 0,
+                          sortMode == SettingsManager::SortByDateCreated
+                                  ? fileInfo.birthTime().toMSecsSinceEpoch()
+                                  : 0,
+                          sortMode == SettingsManager::SortBySize ? fileInfo.size() : 0,
+                          sortMode == SettingsManager::SortByType ? mimeType : QString() });
     }
 
     return fileList;
@@ -144,16 +158,36 @@ FolderScanner::FolderScanInfo FolderScanner::scanFolder(const FolderScanParams &
 int FolderScanner::findLoadedIndexInFolder(const QFileInfo &fileInfo,
                                            const QList<CompatibleFile> &fileList)
 {
-    const QString targetPath = fileInfo.absoluteFilePath().normalized(QString::NormalizationForm_D);
+    const QString targetPath = fileInfo.absoluteFilePath();
+
+#ifdef Q_OS_MACOS
+    // macOS may hand out decomposed names, so the case-insensitive comparison happens on the
+    // normalized paths there
+    const QString normalizedTargetPath = targetPath.normalized(QString::NormalizationForm_D);
+#endif
+
     for (int i = 0; i < fileList.length(); i++) {
+        const QString &candidatePath = fileList.at(i).absoluteFilePath;
+
+        // An exact match names the same file on every file system, so it can be returned
+        // without normalizing or stat'ing anything
+        if (candidatePath == targetPath)
+            return i;
+
         // Compare absoluteFilePath first because it's way faster, but double-check with
         // QFileInfo::operator== because it respects file system case sensitivity rules
-        QString candidatePath =
-                fileList[i].absoluteFilePath.normalized(QString::NormalizationForm_D);
-        if (candidatePath.compare(targetPath, Qt::CaseInsensitive) == 0
-            && QFileInfo(fileList[i].absoluteFilePath) == fileInfo) {
+#ifdef Q_OS_MACOS
+        const QString normalizedCandidatePath =
+                candidatePath.normalized(QString::NormalizationForm_D);
+        if (normalizedCandidatePath.compare(normalizedTargetPath, Qt::CaseInsensitive) != 0)
+            continue;
+#else
+        if (candidatePath.compare(targetPath, Qt::CaseInsensitive) != 0)
+            continue;
+#endif
+
+        if (QFileInfo(candidatePath) == fileInfo)
             return i;
-        }
     }
     return -1;
 }

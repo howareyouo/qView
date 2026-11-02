@@ -3,12 +3,14 @@
 #include "qvapplication.h"
 #include "qvcocoafunctions.h"
 #include "qvplatformfunctions.h"
+#include "qvprofiler.h"
 #include "openwith.h"
 #include "shortcutmanager.h"
 
 #include <QSettings>
 #include <QMimeDatabase>
 #include <QFileIconProvider>
+#include <QSet>
 
 #include <functional>
 
@@ -23,14 +25,20 @@ ActionManager::ActionManager(QObject *parent) : QObject(parent)
             &ActionManager::settingsUpdated);
     settingsUpdated();
 
-    initializeActionLibrary();
+    {
+        QV_PROFILE_SCOPE("startup: action library");
+        initializeActionLibrary();
+    }
 
     recentsSaveTimer = new QTimer(this);
     recentsSaveTimer->setSingleShot(true);
     recentsSaveTimer->setInterval(500);
     connect(recentsSaveTimer, &QTimer::timeout, this, &ActionManager::saveRecentsList);
 
-    loadRecentsList();
+    {
+        QV_PROFILE_SCOPE("startup: recents load");
+        loadRecentsList();
+    }
 
 #ifdef COCOA_LOADED
     windowMenu = new QMenu(tr("Window"));
@@ -386,40 +394,44 @@ void ActionManager::saveRecentsList()
 void ActionManager::addFileToRecentsList(const QFileInfo &file)
 {
     recentsList.prepend({ file.fileName(), file.filePath() });
-    auditRecentsList();
+    // The file that just loaded obviously exists, so a navigation does not need to stat all the
+    // other entries; that is done when the menu opens or when the list is saved
+    auditRecentsList(false);
     recentsSaveTimer->start();
 }
 
-void ActionManager::auditRecentsList()
+void ActionManager::auditRecentsList(bool checkFileExistence)
 {
+    QV_PROFILE_SCOPE("open: recents audit");
+
     // This function should be called whenever there is a change to recentsList,
     // and take care not to call any functions that call it.
     if (!isSaveRecentsEnabled) {
         recentsList.clear();
     }
 
-    for (int i = 0; i < recentsList.length(); i++) {
-        // Ensure each file exists
-        auto recent = recentsList.value(i);
-        if (!QFileInfo::exists(recent.filePath)) {
-            recentsList.removeAt(i);
-        }
+    // Single pass keeps this linear: an earlier entry wins over a later duplicate, and entries
+    // pointing at files that have disappeared are dropped
+    QSet<QString> seenEntries;
+    QList<SRecent> auditedList;
+    auditedList.reserve(recentsList.length());
+    for (const auto &recent : qAsConst(recentsList)) {
+        if (checkFileExistence && !QFileInfo::exists(recent.filePath))
+            continue;
 
-        // Check for duplicates
-        for (int i2 = 0; i2 < recentsList.length(); i2++) {
-            if (i == i2)
-                continue;
+        const QString entryKey = recent.filePath + QChar(u'\n') + recent.fileName;
+        if (seenEntries.contains(entryKey))
+            continue;
 
-            if (recent == recentsList.value(i2)) {
-                recentsList.removeAt(i2);
-            }
-        }
+        seenEntries.insert(entryKey);
+        auditedList.append(recent);
     }
 
-    while (recentsList.size() > recentsListMaxLength) {
-        recentsList.removeLast();
+    while (auditedList.size() > recentsListMaxLength) {
+        auditedList.removeLast();
     }
 
+    recentsList = auditedList;
     updateRecentsMenu();
 }
 
@@ -431,33 +443,59 @@ void ActionManager::clearRecentsList()
 
 void ActionManager::updateRecentsMenu()
 {
+    QV_PROFILE_SCOPE("open: recents menu");
+
+    // File type icons come from the platform and are expensive to look up. They only depend on
+    // the file type, and every entry is populated once per clone of every menu, so the icons are
+    // cached for the session instead of being looked up again for each copy of an entry
+    static QHash<QString, QIcon> fileTypeIcons;
+
     updateIndexedCloneActions("recent", recentsListMaxLength, recentsList.length(),
-                              [this](int i, QAction *action) {
+                              [this, &fileTypeIcons](int i, QAction *action) {
                                   const auto recent = recentsList.value(i);
                                   action->setText(recent.fileName);
 
 #if defined Q_OS_UNIX && !defined Q_OS_MACOS
-                                  // set icons for linux users
-                                  QMimeDatabase mimedb;
-                                  QMimeType type = mimedb.mimeTypeForFile(recent.filePath);
-                                  action->setIcon(QIcon::fromTheme(
-                                          type.iconName(),
-                                          QIcon::fromTheme(type.genericIconName())));
+                                  // Mime types are content based, so the path is the key
+                                  const QString iconKey = "filepath:" + recent.filePath;
 #else
-                                  // set icons for mac/windows users
-                                  QFileInfo fileInfo(recent.filePath);
-                                  QFileIconProvider provider;
-                                  QIcon icon = provider.icon(fileInfo);
-#  ifdef Q_OS_MACOS
-                                  // Workaround for native menu slowness; also required so no full-size native icon
-                                  // ever reaches a menu item (see getCacheableMenuIcon)
-                                  const QString cacheKey = !fileInfo.suffix().isEmpty()
-                                          ? "filetype:" + fileInfo.suffix()
+                                  // File type icons only depend on the suffix
+                                  const QFileInfo fileInfo(recent.filePath);
+                                  const QString iconKey = !fileInfo.suffix().isEmpty()
+                                          ? "filetype:" + fileInfo.suffix().toLower()
                                           : "filepath:" + recent.filePath;
-                                  icon = getCacheableMenuIcon(cacheKey, icon);
-#  endif
-                                  action->setIcon(icon);
 #endif
+
+                                  QIcon icon;
+                                  if (fileTypeIcons.contains(iconKey)) {
+                                      icon = fileTypeIcons.value(iconKey);
+                                  } else {
+                                      // Bound the cache: at worst one icon per file type
+                                      if (fileTypeIcons.size() > 64)
+                                          fileTypeIcons.clear();
+
+#if defined Q_OS_UNIX && !defined Q_OS_MACOS
+                                      // set icons for linux users
+                                      QMimeDatabase mimedb;
+                                      QMimeType type = mimedb.mimeTypeForFile(recent.filePath);
+                                      icon = QIcon::fromTheme(
+                                              type.iconName(),
+                                              QIcon::fromTheme(type.genericIconName()));
+#else
+                                      // set icons for mac/windows users
+                                      QFileIconProvider provider;
+                                      icon = provider.icon(fileInfo);
+#  ifdef Q_OS_MACOS
+                                      // Workaround for native menu slowness; also required so no
+                                      // full-size native icon ever reaches a menu item (see
+                                      // getCacheableMenuIcon)
+                                      icon = getCacheableMenuIcon(iconKey, icon);
+#  endif
+#endif
+                                      fileTypeIcons.insert(iconKey, icon);
+                                  }
+
+                                  action->setIcon(icon);
                               });
     emit recentsMenuUpdated();
 }

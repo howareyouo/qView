@@ -41,8 +41,6 @@ public:
 
     void setWindowSize();
 
-    bool getIsPixmapLoaded() const;
-
     void setJustLaunchedWithImage(bool value);
 
     void openRecent(int i);
@@ -159,7 +157,6 @@ private:
 
     SlideshowController slideshowController;
 
-    QTimer *populateOpenWithTimer;
     QFutureWatcher<QList<OpenWith::OpenWithItem>> openWithFutureWatcher;
 
     bool openWithNeedsPopulate;

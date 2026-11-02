@@ -1,6 +1,7 @@
 #include "qvimagecore.h"
 #include "qvapplication.h"
 #include "qvplatformfunctions.h"
+#include "qvprofiler.h"
 #include <QMessageBox>
 #include <QImageIOHandler>
 #include <QUrl>
@@ -11,6 +12,10 @@
 #include <QScreen>
 
 QCache<QString, QVImageCore::ReadData> QVImageCore::imageCache;
+
+// Preloads decode at reduced size, and only a couple of them run at a time so they cannot crowd
+// out the decode of the file the user is actually opening
+static constexpr int preloadDecodeConcurrency = 2;
 
 QVImageCore::QVImageCore(QObject *parent) : QObject(parent)
 {
@@ -70,6 +75,8 @@ QVImageCore::QVImageCore(QObject *parent) : QObject(parent)
 
 void QVImageCore::loadFile(const QString &fileName, bool isReloading)
 {
+    QV_PROFILE_SCOPE("open: load file (gui)");
+
     if (waitingOnLoad) {
         return;
     }
@@ -109,10 +116,12 @@ void QVImageCore::loadFile(const QString &fileName, bool isReloading)
     QColorSpace targetColorSpace = getTargetColorSpace();
     QString cacheKey = getPixmapCacheKey(sanitaryFileName, fileInfo.size(), targetColorSpace);
 
-    // A preview decode is only worthwhile for the initial display of a file, not reloads
+    // A preview decode is only worthwhile for the initial display of a file, not reloads. The
+    // viewport size is the largest the preview can be shown at, so decoding any more than that
+    // would only make the first paint wait for pixels that cannot be displayed yet.
     QSize previewTargetSize;
     if (!isReloading && fitTargetSize.isValid())
-        previewTargetSize = fitTargetSize * 2;
+        previewTargetSize = fitTargetSize;
 
     // check if cached already before loading the long way
     auto *cachedData = isReloading ? nullptr : QVImageCore::imageCache.take(cacheKey);
@@ -128,23 +137,30 @@ void QVImageCore::loadFile(const QString &fileName, bool isReloading)
     else if (preloadFilesInProgress.contains(sanitaryFileName)) {
         waitingOnPreloadFile = sanitaryFileName;
     } else {
+        // A preload that was only queued is superseded by the decode requested now
+        pendingPreloadFiles.removeOne(sanitaryFileName);
         loadFutureWatcher.setFuture(QtConcurrent::run(&QVImageCore::readFile, this,
                                                       sanitaryFileName, targetColorSpace,
-                                                      folderScanParams, previewTargetSize));
+                                                      folderScanParams, previewTargetSize,
+                                                      fileInfo.size()));
     }
 }
 
 QVImageCore::ReadData QVImageCore::readFile(const QString &fileName,
                                             const QColorSpace &targetColorSpace,
                                             const FolderScanParams &folderScanParams,
-                                            QSize previewTargetSize)
+                                            QSize previewTargetSize, qint64 fileSize)
 {
+    QV_PROFILE_SCOPE("decode: read file");
+
     QImageReader imageReader;
     imageReader.setAutoTransform(true);
 
     imageReader.setFileName(fileName);
 
     QImage readImage;
+    QElapsedTimer readTimer;
+    readTimer.start();
     const bool isSvg = imageReader.format() == "svg" || imageReader.format() == "svgz";
     QSize originalSize = imageReader.size();
     bool isPreview = false;
@@ -172,7 +188,15 @@ QVImageCore::ReadData QVImageCore::readFile(const QString &fileName,
 
         readImage = imageReader.read();
     }
+    QVProfile::record("decode: file read", readTimer.nsecsElapsed());
 
+    // Whether the format can animate at all. Static formats then skip the QMovie probe in
+    // loadPixmap, which opens the file a second time; PNG is always probed because animated PNGs
+    // are not advertised by the reader the way GIF and WebP are.
+    const bool mayAnimate = imageReader.supportsAnimation() || imageReader.format() == "png";
+
+    QElapsedTimer convertTimer;
+    convertTimer.start();
     readImage.convertTo(QImage::Format::Format_ARGB32_Premultiplied);
 
     // Assume image is sRGB if it doesn't specify
@@ -182,20 +206,29 @@ QVImageCore::ReadData QVImageCore::readFile(const QString &fileName,
     // Convert image color space if we have a target that's different
     if (targetColorSpace.isValid() && readImage.colorSpace() != targetColorSpace)
         readImage.convertToColorSpace(targetColorSpace);
+    QVProfile::record("decode: format+colorspace", convertTimer.nsecsElapsed());
 
     QFileInfo fileInfo(fileName);
 
+    // The size is already known when the file was stat'ed by the caller, so it does not need
+    // to be looked up again here
+    const qint64 actualFileSize = fileSize >= 0 ? fileSize : fileInfo.size();
+
     ReadData readData = { readImage,        fileInfo.absoluteFilePath(),
-                          fileInfo.size(),  originalSize,
+                          actualFileSize,   originalSize,
                           targetColorSpace, {} };
+    readData.cacheKey = getPixmapCacheKey(readData.absoluteFilePath, readData.fileSize,
+                                          targetColorSpace);
 
     if (readImage.isNull()) {
         readData.errorData = { true, imageReader.error(), imageReader.errorString() };
     }
     readData.isPreview = isPreview;
+    readData.mayAnimate = mayAnimate;
 
     // Scan the folder while the file is loaded instead of in a separate blocking step
     if (folderScanParams.scanFolder) {
+        QV_PROFILE_SCOPE("decode: folder scan");
         readData.folderInfoScanned = true;
         readData.folderScanInfo = FolderScanner::scanFolder(folderScanParams);
         readData.loadedIndexInFolder =
@@ -207,6 +240,8 @@ QVImageCore::ReadData QVImageCore::readFile(const QString &fileName,
 
 void QVImageCore::loadPixmap(const ReadData &readData)
 {
+    QV_PROFILE_SCOPE("open: load pixmap (gui)");
+
     // A full decode replacing a preview that is already on screen
     const bool isUpgrade = readData.isFullUpgrade && currentFileDetails.isPixmapLoaded;
 
@@ -239,7 +274,10 @@ void QVImageCore::loadPixmap(const ReadData &readData)
         return;
     }
 
+    QElapsedTimer pixmapTimer;
+    pixmapTimer.start();
     loadedPixmap = QPixmap::fromImage(matchCurrentRotation(readData.image));
+    QVProfile::record("open: pixmap upload", pixmapTimer.nsecsElapsed());
 
     // Set file details
     currentFileDetails.isPixmapLoaded = true;
@@ -258,7 +296,7 @@ void QVImageCore::loadPixmap(const ReadData &readData)
     if (currentRotation % 180 != 0)
         currentFileDetails.fullPixmapSize.transpose();
 
-    addToCache(std::move(readData));
+    addToCache(readData);
 
     // Only refresh the display; recents, window sizing, and the movie are already set up
     if (isUpgrade) {
@@ -266,25 +304,36 @@ void QVImageCore::loadPixmap(const ReadData &readData)
         return;
     }
 
-    // Animation detection
-    loadedMovie.setFormat("");
-    loadedMovie.stop();
-    loadedMovie.setFileName(currentFileDetails.fileInfo.absoluteFilePath());
-
-    // APNG workaround
-    if (loadedMovie.format() == "png") {
-        loadedMovie.setFormat("apng");
+    // Animation detection, skipped for formats that cannot animate: QMovie opens the file again
+    // to find out, which is wasted work on every still image
+    if (readData.mayAnimate) {
+        QElapsedTimer movieTimer;
+        movieTimer.start();
+        loadedMovie.setFormat("");
+        loadedMovie.stop();
         loadedMovie.setFileName(currentFileDetails.fileInfo.absoluteFilePath());
+
+        // APNG workaround
+        if (loadedMovie.format() == "png") {
+            loadedMovie.setFormat("apng");
+            loadedMovie.setFileName(currentFileDetails.fileInfo.absoluteFilePath());
+        }
+
+        if (loadedMovie.isValid() && loadedMovie.frameCount() != 1)
+            loadedMovie.start();
+
+        currentFileDetails.isMovieLoaded = loadedMovie.state() == QMovie::Running;
+
+        if (!currentFileDetails.isMovieLoaded)
+            if (auto device = loadedMovie.device())
+                device->close();
+        QVProfile::record("open: movie probe", movieTimer.nsecsElapsed());
+    } else {
+        loadedMovie.stop();
+        loadedMovie.setFormat("");
+        loadedMovie.setFileName(QString());
+        currentFileDetails.isMovieLoaded = false;
     }
-
-    if (loadedMovie.isValid() && loadedMovie.frameCount() != 1)
-        loadedMovie.start();
-
-    currentFileDetails.isMovieLoaded = loadedMovie.state() == QMovie::Running;
-
-    if (!currentFileDetails.isMovieLoaded)
-        if (auto device = loadedMovie.device())
-            device->close();
 
     currentFileDetails.timeSinceLoaded.start();
 
@@ -323,16 +372,10 @@ QVImageCore::FileDetails QVImageCore::getEmptyFileDetails()
              QSize() };
 }
 
-QList<QVImageCore::CompatibleFile> QVImageCore::getCompatibleFiles(const QString &dirPath) const
-{
-    return FolderScanner::getCompatibleFilesForDir(
-            dirPath, qvGetSettingInt(SettingsManager::Setting::SortMode),
-            !qvApp->getSettingsManager().getBool(SettingsManager::Setting::SkipHidden),
-            qvGetSettingBool(SettingsManager::Setting::AllowMimeContentDetection));
-}
-
 void QVImageCore::updateFolderInfo(QString dirPath)
 {
+    QV_PROFILE_SCOPE("folderscan: sync scan (gui)");
+
     if (dirPath.isEmpty()) {
         dirPath = currentFileDetails.fileInfo.path();
 
@@ -366,29 +409,52 @@ void QVImageCore::updateFolderInfoAsync(QString dirPath)
         return;
 
     const FolderScanParams params = makeFolderScanParams(dirPath);
-    folderInfoFutureWatcher.setFuture(
-            QtConcurrent::run([params] { return FolderScanner::scanFolder(params); }));
+    folderInfoFutureWatcher.setFuture(QtConcurrent::run([params] {
+        QV_PROFILE_SCOPE("folderscan: async scan");
+        return FolderScanner::scanFolder(params);
+    }));
+}
+
+QVImageCore::FolderScanSettings QVImageCore::currentFolderScanSettings() const
+{
+    FolderScanSettings settings;
+    settings.sortMode = qvGetSettingInt(SettingsManager::Setting::SortMode);
+    settings.sortDescending = qvGetSettingBool(SettingsManager::Setting::SortDescending);
+    settings.skipHidden = qvApp->getSettingsManager().getBool(SettingsManager::Setting::SkipHidden);
+    settings.allowMimeContentDetection =
+            qvGetSettingBool(SettingsManager::Setting::AllowMimeContentDetection);
+    return settings;
 }
 
 QVImageCore::FolderScanParams QVImageCore::makeFolderScanParams(const QString &dirPath) const
 {
+    const FolderScanSettings settings = currentFolderScanSettings();
+
     FolderScanParams params;
     params.scanFolder = true;
     params.dirPath = dirPath;
-    params.sortMode = qvGetSettingInt(SettingsManager::Setting::SortMode);
-    params.sortDescending = qvGetSettingBool(SettingsManager::Setting::SortDescending);
-    params.skipHidden = qvApp->getSettingsManager().getBool(SettingsManager::Setting::SkipHidden);
-    params.allowMimeContentDetection = qvGetSettingBool(SettingsManager::Setting::AllowMimeContentDetection);
+    params.sortMode = settings.sortMode;
+    params.sortDescending = settings.sortDescending;
+    params.skipHidden = settings.skipHidden;
+    params.allowMimeContentDetection = settings.allowMimeContentDetection;
     params.lastDirInfo = lastDirInfo;
     params.randomSortSeed = randomSortSeed;
+
+    // Remember what the listing is being built with, so a settings change can tell whether it
+    // still matches without scanning the folder again
+    lastFolderScanSettings = settings;
+
     return params;
 }
 
 void QVImageCore::requestCaching(const QColorSpace &targetColorSpace)
 {
+    QV_PROFILE_SCOPE("open: preload requests");
+
     int preloadingMode = qvGetSettingInt(SettingsManager::Setting::PreloadingMode);
     if (preloadingMode == SettingsManager::PreloadingDisabled) {
         QVImageCore::imageCache.clear();
+        pendingPreloadFiles.clear();
         return;
     }
 
@@ -424,43 +490,88 @@ void QVImageCore::requestCaching(const QColorSpace &targetColorSpace)
 
         requestCachingFile(filePath, targetColorSpace);
     }
+
+    // Neighbors of a file the user has already left should not keep the queue busy
+    for (int i = pendingPreloadFiles.size() - 1; i >= 0; --i) {
+        if (!filesToPreload.contains(pendingPreloadFiles.at(i)))
+            pendingPreloadFiles.removeAt(i);
+    }
+
     lastFilesPreloaded = filesToPreload;
 }
 
 void QVImageCore::requestCachingFile(const QString &filePath, const QColorSpace &targetColorSpace)
 {
+    QV_PROFILE_SCOPE("preload: request file");
+
     QFile imgFile(filePath);
-    QString cacheKey = getPixmapCacheKey(filePath, imgFile.size(), targetColorSpace);
+    const qint64 fileSize = imgFile.size();
+    QString cacheKey = getPixmapCacheKey(filePath, fileSize, targetColorSpace);
 
     // check if image is already loaded or requested
     if (QVImageCore::imageCache.contains(cacheKey) || lastFilesPreloaded.contains(filePath))
         return;
 
-    if (imgFile.size() / 1024 > QVImageCore::imageCache.maxCost() / 2)
+    if (fileSize / 1024 > QVImageCore::imageCache.maxCost() / 2)
         return;
 
+    // A file that is already queued or being decoded does not need a second decode
+    if (pendingPreloadFiles.contains(filePath) || preloadFilesInProgress.contains(filePath))
+        return;
+
+    pendingPreloadFiles.append(filePath);
+    startPendingPreloadDecodes();
+}
+
+void QVImageCore::startPendingPreloadDecodes()
+{
+    while (preloadDecodesRunning < preloadDecodeConcurrency && !pendingPreloadFiles.isEmpty())
+        startPreloadDecode(pendingPreloadFiles.takeFirst());
+}
+
+void QVImageCore::startPreloadDecode(const QString &filePath)
+{
+    QV_PROFILE_SCOPE("preload: decode start");
+
+    ++preloadDecodesRunning;
     preloadFilesInProgress.append(filePath);
+
+    // Preloads decode at the size the viewport can show, which costs a fraction of a full decode.
+    // Opening the file later paints that preview right away and upgrades it in the background.
+    QSize previewTargetSize;
+    if (fitTargetSize.isValid())
+        previewTargetSize = fitTargetSize;
 
     auto *cacheFutureWatcher = new QFutureWatcher<ReadData>();
     connect(cacheFutureWatcher, &QFutureWatcher<ReadData>::finished, this,
             [cacheFutureWatcher, this]() {
                 const ReadData readData = cacheFutureWatcher->result();
+                preloadFilesInProgress.removeAll(readData.absoluteFilePath);
+                preloadDecodesRunning--;
+                cacheFutureWatcher->deleteLater();
+
                 if (waitingOnPreloadFile == readData.absoluteFilePath) {
                     loadPixmap(readData);
                     waitingOnPreloadFile = QString();
+                    // A preload is a preview decode, so the full decode has to follow
+                    if (readData.isPreview)
+                        startFullDecode(readData.absoluteFilePath, readData.targetColorSpace);
                 } else {
-                    addToCache(std::move(readData));
+                    addToCache(readData);
                 }
-                preloadFilesInProgress.removeAll(readData.absoluteFilePath);
-                cacheFutureWatcher->deleteLater();
+
+                startPendingPreloadDecodes();
             });
 
     cacheFutureWatcher->setFuture(QtConcurrent::run(&QVImageCore::readFile, this, filePath,
-                                                    targetColorSpace, FolderScanParams(), QSize()));
+                                                    getTargetColorSpace(), FolderScanParams(),
+                                                    previewTargetSize));
 }
 
-void QVImageCore::addToCache(const ReadData &&readData)
+void QVImageCore::addToCache(const ReadData &readData)
 {
+    QV_PROFILE_SCOPE("open: cache insert");
+
     // Full decodes that replace a preview on screen are already being displayed
     if (readData.isFullUpgrade)
         return;
@@ -468,8 +579,12 @@ void QVImageCore::addToCache(const ReadData &&readData)
     if (readData.image.isNull())
         return;
 
-    QString cacheKey = getPixmapCacheKey(readData.absoluteFilePath, readData.fileSize,
-                                         readData.targetColorSpace);
+    // The key is computed once while decoding, so it does not have to be rebuilt from the file
+    // path, size and ICC profile on every cache access
+    const QString cacheKey = readData.cacheKey.isEmpty()
+            ? getPixmapCacheKey(readData.absoluteFilePath, readData.fileSize,
+                                readData.targetColorSpace)
+            : readData.cacheKey;
     qint64 pixmapMemoryBytes = static_cast<qint64>(readData.image.width()) * readData.image.height()
             * readData.image.depth() / 8;
 
@@ -484,6 +599,8 @@ void QVImageCore::addToCache(const ReadData &&readData)
     cacheEntry.targetColorSpace = readData.targetColorSpace;
     cacheEntry.errorData = readData.errorData;
     cacheEntry.isPreview = readData.isPreview;
+    cacheEntry.mayAnimate = readData.mayAnimate;
+    cacheEntry.cacheKey = cacheKey;
     QVImageCore::imageCache.insert(cacheKey, new ReadData(std::move(cacheEntry)), pixmapMemoryKiB);
 }
 
@@ -513,7 +630,7 @@ void QVImageCore::startFullDecode(const QString &filePath, const QColorSpace &ta
                     readData.isFullUpgrade = true;
                     loadPixmap(readData);
                 } else {
-                    addToCache(std::move(upgradeData));
+                    addToCache(upgradeData);
                 }
             });
 
@@ -541,16 +658,25 @@ QColorSpace QVImageCore::getTargetColorSpace() const
 
 QColorSpace QVImageCore::detectDisplayColorSpace() const
 {
+    QV_PROFILE_SCOPE("open: display color space");
+
     QWindow *window = static_cast<QWidget *>(parent())->window()->windowHandle();
+    if (!window)
+        return {};
 
-    QByteArray profileData = QVPlatformFunctions::getIccProfileForWindow(window);
+    // The profile only changes when the window moves to another screen, so it is read and
+    // parsed once per screen instead of on every image load
+    const QScreen *screen = window->screen();
+    if (displayColorSpaceCached && displayColorSpaceScreen.data() == screen)
+        return cachedDisplayColorSpace;
 
-    if (!profileData.isEmpty()) {
-        QColorSpace colorSpace = QColorSpace::fromIccProfile(profileData);
-        return colorSpace;
-    }
+    const QByteArray profileData = QVPlatformFunctions::getIccProfileForWindow(window);
+    cachedDisplayColorSpace = profileData.isEmpty() ? QColorSpace()
+                                                    : QColorSpace::fromIccProfile(profileData);
+    displayColorSpaceScreen = window->screen();
+    displayColorSpaceCached = true;
 
-    return {};
+    return cachedDisplayColorSpace;
 }
 
 void QVImageCore::jumpToNextFrame()
@@ -655,6 +781,9 @@ void QVImageCore::settingsUpdated()
 {
     auto &settingsManager = qvApp->getSettingsManager();
 
+    // A settings change may follow a display profile change, so the cached profile is dropped
+    displayColorSpaceCached = false;
+
     // preloading mode
     // Cost is in KiB
     switch (qvGetSettingInt(SettingsManager::Setting::PreloadingMode)) {
@@ -674,8 +803,10 @@ void QVImageCore::settingsUpdated()
         Q_ASSERT(false);
     }
 
-    // update folder info to reflect new settings (e.g. sort order)
-    updateFolderInfo();
+    // update folder info to reflect new settings (e.g. sort order), but only when a setting that
+    // shapes the listing changed; anything else leaves the current listing untouched
+    if (currentFolderScanSettings() != lastFolderScanSettings)
+        updateFolderInfo();
 
     bool changedImagePreprocessing = false;
 

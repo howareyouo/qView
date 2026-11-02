@@ -69,8 +69,6 @@ public:
         QStringList mimeTypeNameList;
     };
 
-    QMenuBar *getMenuBar() const { return menuBar; }
-
     const QStringList &getNameFilterList() const
     {
         ensureFilterLists();
@@ -106,8 +104,6 @@ private:
     QList<MainWindow *> lastActiveWindows;
 
     QMenu *dockMenu;
-
-    QMenuBar *menuBar;
 
     static FilterLists buildFilterLists();
 

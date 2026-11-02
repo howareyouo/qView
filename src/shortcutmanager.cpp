@@ -1,11 +1,14 @@
 #include "shortcutmanager.h"
 #include "qvapplication.h"
+#include "qvprofiler.h"
 #include "actionmanager.h"
 
 #include <QSettings>
 
 ShortcutManager::ShortcutManager(QObject *parent) : QObject(parent)
 {
+    QV_PROFILE_SCOPE("startup: shortcuts");
+
     initializeShortcutsList();
     updateShortcuts();
 }

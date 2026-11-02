@@ -1,7 +1,9 @@
 #include "mainwindow.h"
 #include "qvapplication.h"
+#include "qvprofiler.h"
 
 #include <QCommandLineParser>
+#include <QElapsedTimer>
 #include <QFileInfo>
 #include <QSettings>
 
@@ -25,6 +27,10 @@ static void detectPortableMode(const QString &applicationArg0)
 
 int main(int argc, char *argv[])
 {
+    // Only recorded when QV_PROFILE is set, see qvprofiler.h
+    QElapsedTimer startupTimer;
+    startupTimer.start();
+
     QCoreApplication::setOrganizationName("qView");
     QCoreApplication::setApplicationName("qView");
     QCoreApplication::setApplicationVersion(QString::number(VERSION));
@@ -41,5 +47,9 @@ int main(int argc, char *argv[])
     if (!parser.positionalArguments().isEmpty())
         QVApplication::openFile(window, parser.positionalArguments().constFirst(), true);
 
-    return QApplication::exec();
+    QVProfile::record("startup: until event loop", startupTimer.nsecsElapsed());
+
+    const int exitCode = QApplication::exec();
+    QVProfile::dump();
+    return exitCode;
 }

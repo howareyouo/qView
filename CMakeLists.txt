@@ -81,6 +81,7 @@ set(PROJECT_HEADERS
     src/actionmanager.h
     src/settingsmanager.h
     src/shortcutmanager.h
+    src/qvprofiler.h
 )
 
 # UI form files

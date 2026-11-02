@@ -2,6 +2,7 @@
 #include "ui_mainwindow.h"
 #include "qvapplication.h"
 #include "qvplatformfunctions.h"
+#include "qvprofiler.h"
 #include "qvrenamedialog.h"
 #include "windowgeometry.h"
 
@@ -22,6 +23,7 @@
 #include <QIcon>
 #include <QMimeDatabase>
 #include <QScreen>
+#include <QElapsedTimer>
 #include <QCursor>
 #include <QFutureWatcher>
 #include <QtConcurrent/QtConcurrentRun>
@@ -30,6 +32,11 @@
 
 MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent), ui(new Ui::MainWindow)
 {
+    QV_PROFILE_SCOPE("startup: window creation");
+
+    QElapsedTimer startupTimer;
+    startupTimer.start();
+
     ui->setupUi(this);
     setAttribute(Qt::WA_DeleteOnClose);
     // Create the window with a translucent surface so the background color's alpha shows the
@@ -81,6 +88,9 @@ MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent), ui(new Ui::MainWi
     // Timer for slideshow
     connect(slideshowController.getTimer(), &QTimer::timeout, this, &MainWindow::slideshowAction);
 
+    QVProfile::record("startup: window setup", startupTimer.nsecsElapsed());
+    startupTimer.restart();
+
     // Context menu
     auto &actionManager = qvApp->getActionManager();
 
@@ -131,6 +141,9 @@ MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent), ui(new Ui::MainWi
         ActionManager::actionTriggered(triggeredAction, this);
     });
 
+    QVProfile::record("startup: window menus", startupTimer.nsecsElapsed());
+    startupTimer.restart();
+
     // Enable actions related to having a window
     disableActions();
 
@@ -149,12 +162,8 @@ MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent), ui(new Ui::MainWi
     settingsUpdated();
     shortcutsUpdated();
 
-    // Timer for delayed-load Open With menu, used as a fallback for programmatic population
-    populateOpenWithTimer = new QTimer(this);
-    populateOpenWithTimer->setSingleShot(true);
-    populateOpenWithTimer->setInterval(1000);
-    connect(populateOpenWithTimer, &QTimer::timeout, this,
-            &MainWindow::requestPopulateOpenWithMenu);
+    QVProfile::record("startup: window state", startupTimer.nsecsElapsed());
+    startupTimer.restart();
 
     // Connection for open with menu population futurewatcher
     connect(&openWithFutureWatcher, &QFutureWatcher<QList<OpenWith::OpenWithItem>>::finished, this,
@@ -173,6 +182,8 @@ MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent), ui(new Ui::MainWi
 
     // Exiting without closing the window skips closeEvent, so save the zoom on the way out too
     connect(qApp, &QCoreApplication::aboutToQuit, this, &MainWindow::saveZoom);
+
+    QVProfile::record("startup: window restore", startupTimer.nsecsElapsed());
 
     // Show welcome dialog on first launch
     if (!settings.value("firstlaunch", false).toBool()) {
@@ -489,8 +500,9 @@ void MainWindow::openRecent(int i)
 
 void MainWindow::fileChanged()
 {
+    QV_PROFILE_SCOPE("open: file changed (gui)");
+
     openWithNeedsPopulate = true;
-    populateOpenWithTimer->start();
     disableActions();
 
     if (info->isVisible())
@@ -512,6 +524,8 @@ void MainWindow::fileChanged()
 
 void MainWindow::disableActions()
 {
+    QV_PROFILE_SCOPE("open: action states");
+
     using EnableRule = ActionManager::EnableRule;
 
     const auto &actionManager = qvApp->getActionManager();
@@ -557,8 +571,10 @@ void MainWindow::requestPopulateOpenWithMenu()
 
     // Read the path here so that the worker doesn't have to touch window state
     const QString currentFilePath = getCurrentFileDetails().fileInfo.absoluteFilePath();
-    openWithFutureWatcher.setFuture(QtConcurrent::run(
-            [currentFilePath] { return OpenWith::getOpenWithItems(currentFilePath); }));
+    openWithFutureWatcher.setFuture(QtConcurrent::run([currentFilePath] {
+        QV_PROFILE_SCOPE("menu: open with lookup");
+        return OpenWith::getOpenWithItems(currentFilePath);
+    }));
 }
 
 void MainWindow::openWithMenuAboutToShow()
@@ -566,7 +582,6 @@ void MainWindow::openWithMenuAboutToShow()
     if (!openWithNeedsPopulate)
         return;
 
-    populateOpenWithTimer->stop();
     openWithNeedsPopulate = false;
     requestPopulateOpenWithMenu();
 }
@@ -691,11 +706,6 @@ void MainWindow::setWindowSize()
 
     // The size the image was given is where zooming out stops moving the window
     graphicsView->rememberFittedWindowSize();
-}
-
-bool MainWindow::getIsPixmapLoaded() const
-{
-    return getCurrentFileDetails().isPixmapLoaded;
 }
 
 void MainWindow::setJustLaunchedWithImage(bool value)

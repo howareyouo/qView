@@ -1,6 +1,7 @@
 #include "qvapplication.h"
 #include "qvoptionsdialog.h"
 #include "qvplatformfunctions.h"
+#include "qvprofiler.h"
 #include "updatechecker.h"
 
 #include <QFileOpenEvent>
@@ -12,6 +13,8 @@
 
 QVApplication::QVApplication(int &argc, char **argv) : QApplication(argc, argv)
 {
+    QV_PROFILE_SCOPE("startup: application setup");
+
     setDesktopFileName("com.interversehq.qView.desktop");
 
     // Connections
@@ -55,11 +58,6 @@ QVApplication::QVApplication(int &argc, char **argv) : QApplication(argc, argv)
     dockMenu->setAsDockMenu();
 #endif
 
-    // Build menu bar
-    menuBar = actionManager.buildMenuBar();
-    connect(menuBar, &QMenuBar::triggered, this,
-            [](QAction *triggeredAction) { ActionManager::actionTriggered(triggeredAction); });
-
     // Set mac-specific application settings
     QVPlatformFunctions::setUserDefaults();
 #ifdef Q_OS_MACOS
@@ -70,7 +68,6 @@ QVApplication::QVApplication(int &argc, char **argv) : QApplication(argc, argv)
 QVApplication::~QVApplication()
 {
     dockMenu->deleteLater();
-    menuBar->deleteLater();
 }
 
 bool QVApplication::event(QEvent *event)

@@ -3,6 +3,7 @@
 #include "qvinfodialog.h"
 #include "qvcocoafunctions.h"
 #include "qvplatformfunctions.h"
+#include "qvprofiler.h"
 #include "settingsmanager.h"
 #include <QRandomGenerator>
 #include <QWheelEvent>
@@ -395,6 +396,8 @@ void QVGraphicsView::reloadFile()
 
 void QVGraphicsView::postLoad()
 {
+    QV_PROFILE_SCOPE("open: post load (gui)");
+
     preZoomWindowSize = QSize();
     zoomWindowFittedSize = QSize();
     updateLoadedPixmapItem();
@@ -793,6 +796,8 @@ static QSize imageSizeForZoomRecord(const QVImageCore::FileDetails &fileDetails)
 
 void QVGraphicsView::updateLoadedPixmapItem()
 {
+    QV_PROFILE_SCOPE("open: pixmap item update");
+
     // The zoom the image was at, to be reused for the one that is replacing it. It is relative to
     // the fit scale, so it means the same thing on an image of any size, but only on one framed the
     // same way: a differently shaped image starts at the fit scale instead.

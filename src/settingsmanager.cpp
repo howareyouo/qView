@@ -10,6 +10,8 @@
 
 #include <QDebug>
 
+#include "qvprofiler.h"
+
 // Setting definition structure for initialization
 struct SettingDefinition
 {
@@ -68,9 +70,15 @@ static QVector<QString> settingKeys;
 
 SettingsManager::SettingsManager(QObject *parent) : QObject(parent)
 {
-    initializeSettingDataCache();
-    loadSettings();
-    loadTranslation();
+    {
+        QV_PROFILE_SCOPE("startup: settings");
+        initializeSettingDataCache();
+        loadSettings();
+    }
+    {
+        QV_PROFILE_SCOPE("startup: translations");
+        loadTranslation();
+    }
 }
 
 QDir SettingsManager::translationsDir()
@@ -143,6 +151,8 @@ bool SettingsManager::loadTranslation() const
 
 void SettingsManager::loadSettings()
 {
+    QV_PROFILE_SCOPE("settings: load");
+
     QSettings settings;
     settings.beginGroup("options");
     bool changed = false;
@@ -222,12 +232,6 @@ double SettingsManager::getDouble(Setting setting, bool defaults) const
 QString SettingsManager::getString(Setting setting, bool defaults) const
 {
     return getSetting(setting, defaults).toString();
-}
-
-bool SettingsManager::isDefault(Setting setting) const
-{
-    const SettingData &data = getSettingData(setting);
-    return data.value.isNull() || data.value == data.defaultValue;
 }
 
 void SettingsManager::initializeSettingDataCache()

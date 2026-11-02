@@ -135,7 +135,6 @@ public:
     QString getString(Setting setting, bool defaults = false) const;
     // Returns a reference into the cache, so reading a setting does not copy the variant
     const QVariant &getSetting(Setting setting, bool defaults = false) const;
-    bool isDefault(Setting setting) const;
 
     // Direct enum-based access to setting data
     const SettingData &getSettingData(Setting setting) const;
