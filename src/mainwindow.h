@@ -85,6 +85,12 @@ public:
 
     int getTitlebarOverlap() const;
 
+    bool isMenuBarVisible() const
+    {
+        // Deliberately avoids QMainWindow::menuBar(), which would create an empty one on demand
+        return menuBarBuilt && menuBar()->isVisible();
+    }
+
     const QVImageCore::FileDetails &getCurrentFileDetails() const
     {
         return graphicsView->getCurrentFileDetails();
@@ -138,8 +144,15 @@ private:
 
     void saveZoom();
 
+    // Builds the menu bar the first time it is needed. It is skipped entirely when the menu bar
+    // is disabled, since building it is one of the more expensive parts of window setup and its
+    // actions also exist as clones in the virtual menu that holds the window shortcuts.
+    void ensureMenuBar();
+
     QMenu *contextMenu;
     QMenu *virtualMenu;
+
+    bool menuBarBuilt = false;
 
     QShortcut *escShortcut;
 

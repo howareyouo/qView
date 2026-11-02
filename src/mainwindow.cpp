@@ -122,17 +122,10 @@ MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent), ui(new Ui::MainWi
     }
 
     {
-        // Initialize menubar
+        // Initialize menubar, but only when it is going to be shown: see ensureMenuBar()
         QV_PROFILE_SCOPE("startup: window menubar");
-        setMenuBar(actionManager.buildMenuBar(this));
-        // Stop actions conflicting with the window's actions
-        const auto menubarActions = ActionManager::getAllNestedActions(menuBar()->actions());
-        for (auto action : menubarActions) {
-            action->setShortcutContext(Qt::WidgetShortcut);
-        }
-        connect(menuBar(), &QMenuBar::triggered, this, [this](QAction *triggeredAction) {
-            ActionManager::actionTriggered(triggeredAction, this);
-        });
+        if (qvGetSettingBool(SettingsManager::Setting::MenuBarEnabled))
+            ensureMenuBar();
     }
 
     {
@@ -257,7 +250,8 @@ void MainWindow::closeEvent(QCloseEvent *event)
 
     qvApp->deleteFromLastActiveWindows(this);
     qvApp->getActionManager().untrackClonedActions(contextMenu);
-    qvApp->getActionManager().untrackClonedActions(menuBar());
+    if (menuBarBuilt)
+        qvApp->getActionManager().untrackClonedActions(menuBar());
     qvApp->getActionManager().untrackClonedActions(virtualMenu);
 
     QMainWindow::closeEvent(event);
@@ -431,7 +425,12 @@ void MainWindow::settingsUpdated()
     // Menu bar is effectively always enabled on macOS
     menuBarEnabled = true;
 #endif
-    menuBar()->setVisible(menuBarEnabled);
+    if (menuBarEnabled) {
+        ensureMenuBar();
+        menuBar()->setVisible(true);
+    } else if (menuBarBuilt) {
+        menuBar()->setVisible(false);
+    }
 
     // frameless
     updateFrameless();
@@ -462,6 +461,25 @@ void MainWindow::settingsUpdated()
 
     // repaint in case background color changed
     update();
+}
+
+void MainWindow::ensureMenuBar()
+{
+    if (menuBarBuilt)
+        return;
+    menuBarBuilt = true;
+
+    auto &actionManager = qvApp->getActionManager();
+
+    setMenuBar(actionManager.buildMenuBar(this));
+    // Stop actions conflicting with the window's actions
+    const auto menubarActions = ActionManager::getAllNestedActions(menuBar()->actions());
+    for (auto action : menubarActions) {
+        action->setShortcutContext(Qt::WidgetShortcut);
+    }
+    connect(menuBar(), &QMenuBar::triggered, this, [this](QAction *triggeredAction) {
+        ActionManager::actionTriggered(triggeredAction, this);
+    });
 }
 
 void MainWindow::updateFrameless()

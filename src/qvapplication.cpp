@@ -138,9 +138,19 @@ void QVApplication::setLastFileDialogDir(const QString &dir)
 
 MainWindow *QVApplication::newWindow()
 {
+    QElapsedTimer windowTimer;
+    windowTimer.start();
+
     auto *w = new MainWindow();
+    QVProfile::record("startup: new window (construct)", windowTimer.nsecsElapsed());
+    windowTimer.restart();
+
     w->show();
+    QVProfile::record("startup: new window (show)", windowTimer.nsecsElapsed());
+    windowTimer.restart();
+
     w->raise();
+    QVProfile::record("startup: new window (raise)", windowTimer.nsecsElapsed());
 
     return w;
 }

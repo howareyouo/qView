@@ -47,7 +47,7 @@ void resizeToImage(MainWindow &window, QSize imageSize, qreal minWindowResizedPe
 
     QSize extraWidgetsSize{ 0, 0 };
 
-    if (window.menuBar()->isVisible())
+    if (window.isMenuBarVisible())
         extraWidgetsSize.rheight() += window.menuBar()->height();
 
     const int titlebarOverlap = window.getTitlebarOverlap();
