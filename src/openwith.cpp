@@ -191,7 +191,7 @@ void OpenWith::openWith(const QString &filePath, const OpenWithItem &openWithIte
     // Windows-only native app launch method
     if (openWithItem.winAssocHandler) {
         QVPlatformFunctions::openWithInvokeAssocHandler(nativeFilePath,
-                                                        openWithItem.winAssocHandler);
+                                                        openWithItem.winAssocHandler.data());
     } else {
         args.append(nativeFilePath);
         QProcess::startDetached(exec, args);

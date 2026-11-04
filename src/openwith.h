@@ -4,7 +4,12 @@
 #include <QIcon>
 #include <QDialog>
 #include <QAbstractButton>
+#include <QSharedPointer>
 #include <QStandardItemModel>
+
+// The Windows association handler behind an open-with entry. Only the platform layer knows what
+// it is made of, and it owns releasing it.
+class AssocHandler;
 
 class OpenWith : public QObject
 {
@@ -19,7 +24,9 @@ public:
         QStringList args;
         QStringList categories; // this is only used on linux
         bool isDefault = false;
-        void *winAssocHandler = nullptr;
+        // Set on Windows only, for entries that came from the shell's association list. Held as
+        // a value so copying an entry keeps the handler alive for whichever copy is invoked.
+        QSharedPointer<AssocHandler> winAssocHandler;
     };
 
     static const QList<OpenWithItem> getOpenWithItems(const QString &filePath);

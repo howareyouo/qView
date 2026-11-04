@@ -17,6 +17,62 @@
 
 #include <QDebug>
 
+// Owns the shell association handler behind an open-with entry: the shell hands back a
+// reference, and this is where it is released again, so an entry only has to carry the handler
+// around as a value.
+class AssocHandler
+{
+public:
+    explicit AssocHandler(IAssocHandler *handler) : handler(handler) {}
+    ~AssocHandler() { handler->Release(); }
+
+    // What the shell calls this handler and the executable behind it. Empty when the shell
+    // declines to say. Each string is allocated by the shell and freed here.
+    QString uiName() const;
+    QString name() const;
+    QString iconLocation() const;
+
+    // Opens the file through this handler, given the data object built from the shell item
+    void invoke(IDataObject *dataObject) const { handler->Invoke(dataObject); }
+
+private:
+    IAssocHandler *handler;
+};
+
+QString AssocHandler::uiName() const
+{
+    LPWSTR value = nullptr;
+    if (FAILED(handler->GetUIName(&value)))
+        return QString();
+
+    const QString result = QString::fromWCharArray(value);
+    CoTaskMemFree(value);
+    return result;
+}
+
+QString AssocHandler::name() const
+{
+    LPWSTR value = nullptr;
+    if (FAILED(handler->GetName(&value)))
+        return QString();
+
+    const QString result = QString::fromWCharArray(value);
+    CoTaskMemFree(value);
+    return result;
+}
+
+QString AssocHandler::iconLocation() const
+{
+    LPWSTR value = nullptr;
+    int index = 0;
+    if (FAILED(handler->GetIconLocation(&value, &index)))
+        return QString();
+
+    const QString result = QString::fromWCharArray(value);
+    CoTaskMemFree(value);
+    return result;
+}
+
 QList<OpenWith::OpenWithItem> QVWin32Functions::getOpenWithItems(const QString &filePath)
 {
     QList<OpenWith::OpenWithItem> listOfOpenWithItems;
@@ -41,34 +97,23 @@ QList<OpenWith::OpenWithItem> QVWin32Functions::getOpenWithItems(const QString &
     }
 
     ULONG retrieved = 0;
-    IAssocHandler *retrievedHandlers = 0; // this is an array with one element
-    while (assocHandlers->Next(1, &retrievedHandlers, &retrieved) == S_OK) {
-        IAssocHandler &assocHandler = retrievedHandlers[0];
+    IAssocHandler *retrievedHandler = 0;
+    while (assocHandlers->Next(1, &retrievedHandler, &retrieved) == S_OK) {
+        // The reference the shell handed back belongs to this entry from here on
+        const QSharedPointer<AssocHandler> assocHandler(new AssocHandler(retrievedHandler));
 
-        // Get UI name
-        WCHAR *uiName = 0;
-        if (!SUCCEEDED(assocHandler.GetUIName(&uiName)))
-            continue;
-
-        // Get "name" (this is exec)
-        WCHAR *name = 0;
-        if (!SUCCEEDED(assocHandler.GetName(&name)))
-            continue;
-
-        // Get icon path and index (index is not used in this program)
-        WCHAR *icon = 0;
-        int iconIndex = 0;
-        if (!SUCCEEDED(assocHandler.GetIconLocation(&icon, &iconIndex)))
-            continue;
-
-        // Set OpenWithItem fields
         OpenWith::OpenWithItem openWithItem;
-        openWithItem.name = QString::fromWCharArray(uiName);
-        openWithItem.exec = QString::fromWCharArray(name);
-        openWithItem.isDefault = openWithItem.name == defaultProgramName;
-        openWithItem.winAssocHandler = &assocHandler;
+        openWithItem.name = assocHandler->uiName();
+        openWithItem.exec = assocHandler->name();
+        const QString iconLocation = assocHandler->iconLocation();
 
-        QString iconLocation = QString::fromWCharArray(icon);
+        // An entry the shell can neither name nor point at can be shown or invoked; skip it
+        if (openWithItem.name.isEmpty() || openWithItem.exec.isEmpty())
+            continue;
+
+        openWithItem.isDefault = openWithItem.name == defaultProgramName;
+        openWithItem.winAssocHandler = assocHandler;
+
         bool isAppx = iconLocation.contains("ms-resource");
 
         // Don't include qView in open with menu
@@ -87,7 +132,8 @@ QList<OpenWith::OpenWithItem> QVWin32Functions::getOpenWithItems(const QString &
         // Set an icon
         if (isAppx) {
             WCHAR realIconPath[MAX_PATH];
-            SHLoadIndirectString(icon, realIconPath, MAX_PATH, NULL);
+            SHLoadIndirectString(reinterpret_cast<LPCWSTR>(iconLocation.utf16()), realIconPath,
+                                 MAX_PATH, NULL);
             openWithItem.icon = QIcon(QString::fromWCharArray(realIconPath));
         } else {
             QFileIconProvider iconProvider;
@@ -97,10 +143,13 @@ QList<OpenWith::OpenWithItem> QVWin32Functions::getOpenWithItems(const QString &
         listOfOpenWithItems.append(openWithItem);
     }
 
+    assocHandlers->Release();
+
     return listOfOpenWithItems;
 }
 
-void QVWin32Functions::openWithInvokeAssocHandler(const QString &filePath, void *winAssocHandler)
+void QVWin32Functions::openWithInvokeAssocHandler(const QString &filePath,
+                                                  AssocHandler *winAssocHandler)
 {
     const QString &nativeFilePath = QDir::toNativeSeparators(filePath);
 
@@ -118,12 +167,14 @@ void QVWin32Functions::openWithInvokeAssocHandler(const QString &filePath, void 
     if (!SUCCEEDED(shellItem->BindToHandler(NULL, BHID_DataObject, IID_IDataObject,
                                             (void **)&dataObject))) {
         qDebug() << "Failed to get IDataObject from IShellItem";
+        shellItem->Release();
         return;
     }
 
-    // Cast passed IAssocHandler and invoke
-    IAssocHandler *assocHandler = static_cast<IAssocHandler *>(winAssocHandler);
-    assocHandler->Invoke(dataObject);
+    winAssocHandler->invoke(dataObject);
+
+    dataObject->Release();
+    shellItem->Release();
 }
 
 void QVWin32Functions::showOpenWithDialog(const QString &filePath, const QWindow *parent)

@@ -96,7 +96,7 @@ void QVPlatformFunctions::setDockRecents(const QStringList &recentPathsList)
 }
 
 void QVPlatformFunctions::openWithInvokeAssocHandler(const QString &filePath,
-                                                     void *winAssocHandler)
+                                                     AssocHandler *winAssocHandler)
 {
 #if defined(Q_OS_WIN) && defined(WIN32_LOADED)
     QVWin32Functions::openWithInvokeAssocHandler(filePath, winAssocHandler);

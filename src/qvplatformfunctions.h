@@ -50,7 +50,7 @@ public:
     // desktop entries elsewhere
     static QList<OpenWith::OpenWithItem> getOpenWithItems(const QString &filePath);
 
-    static void openWithInvokeAssocHandler(const QString &filePath, void *winAssocHandler);
+    static void openWithInvokeAssocHandler(const QString &filePath, AssocHandler *winAssocHandler);
 
     // Moves a file into the platform trash. Returns the outcome; on success trashedPath is
     // set to the file's new location inside the trash.

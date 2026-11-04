@@ -10,7 +10,7 @@ class QVWin32Functions
 public:
     static QList<OpenWith::OpenWithItem> getOpenWithItems(const QString &filePath);
 
-    static void openWithInvokeAssocHandler(const QString &filePath, void *winAssocHandler);
+    static void openWithInvokeAssocHandler(const QString &filePath, AssocHandler *winAssocHandler);
 
     static void showOpenWithDialog(const QString &filePath, const QWindow *parent);
 
