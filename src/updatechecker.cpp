@@ -30,6 +30,17 @@ void UpdateChecker::check(bool isStartupCheck)
     sendRequest(UPDATE_URL + "/latest");
 }
 
+bool UpdateChecker::notificationsEnabled()
+{
+    return qvApp->getSettingsManager().getBool(SettingsManager::Setting::UpdateNotifications);
+}
+
+void UpdateChecker::setNotificationsEnabled(bool enabled)
+{
+    qvApp->getSettingsManager().applySettings(
+            { { SettingsManager::Setting::UpdateNotifications, enabled } });
+}
+
 void UpdateChecker::sendRequest(const QUrl &url)
 {
     latestVersionNum = 0.0;
@@ -108,11 +119,8 @@ void UpdateChecker::openDialog()
     msgBox->addButton(downloadButton, QMessageBox::ActionRole);
     connect(downloadButton, &QAbstractButton::clicked, this,
             [this] { QDesktopServices::openUrl(DOWNLOAD_URL); });
-    connect(msgBox->button(QMessageBox::Reset), &QAbstractButton::clicked, qvApp, [] {
-        QSettings settings;
-        settings.beginGroup("options");
-        settings.setValue("updatenotifications", false);
-        qvApp->getSettingsManager().loadSettings();
+    connect(msgBox->button(QMessageBox::Reset), &QAbstractButton::clicked, this, [] {
+        setNotificationsEnabled(false);
         QMessageBox::information(nullptr, tr("qView Update Checking Disabled"),
                                  tr("Update notifications on startup have been disabled.\nYou can "
                                     "reenable them in the options dialog."),

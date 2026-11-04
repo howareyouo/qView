@@ -10,6 +10,7 @@
 #include <QIcon>
 #include <QGuiApplication>
 #include <QScreen>
+#include <QRandomGenerator>
 
 QCache<QString, QVImageCore::ReadData> QVImageCore::imageCache;
 
@@ -413,6 +414,112 @@ void QVImageCore::updateFolderInfoAsync(QString dirPath)
         QV_PROFILE_SCOPE("folderscan: async scan");
         return FolderScanner::scanFolder(params);
     }));
+}
+
+bool QVImageCore::goToFile(GoToFileMode mode, int index)
+{
+    bool shouldRetryFolderInfoUpdate = false;
+
+    // Update folder info only after a little idle time as an optimization for when
+    // the user is rapidly navigating through files.
+    if (!currentFileDetails.timeSinceLoaded.isValid()
+        || currentFileDetails.timeSinceLoaded.hasExpired(3000)) {
+        // Make sure the file still exists because if it disappears from the file listing we'll lose
+        // track of our index within the folder. Use the static 'exists' method to avoid caching.
+        // If we skip updating now, flag it for retry later once we locate a new file.
+        if (QFile::exists(currentFileDetails.fileInfo.absoluteFilePath()))
+            updateFolderInfoAsync();
+        else
+            shouldRetryFolderInfoUpdate = true;
+    }
+
+    const auto &fileList = currentFileDetails.folderFileInfoList;
+    if (fileList.isEmpty())
+        return false;
+
+    int newIndex = currentFileDetails.loadedIndexInFolder;
+    int searchDirection = 0;
+    // Set when the cursor leaves the listing and looping is off, so the caller can stop driving
+    bool reachedEnd = false;
+
+    switch (mode) {
+    case GoToFileMode::constant: {
+        newIndex = index;
+        break;
+    }
+    case GoToFileMode::first: {
+        newIndex = 0;
+        searchDirection = 1;
+        break;
+    }
+    case GoToFileMode::previous: {
+        if (newIndex == 0) {
+            if (qvGetSettingBool(SettingsManager::Setting::LoopFoldersEnabled))
+                newIndex = fileList.size() - 1;
+            else
+                reachedEnd = true;
+        } else
+            newIndex--;
+        searchDirection = -1;
+        break;
+    }
+    case GoToFileMode::next: {
+        if (fileList.size() - 1 == newIndex) {
+            if (qvGetSettingBool(SettingsManager::Setting::LoopFoldersEnabled))
+                newIndex = 0;
+            else
+                reachedEnd = true;
+        } else
+            newIndex++;
+        searchDirection = 1;
+        break;
+    }
+    case GoToFileMode::last: {
+        newIndex = fileList.size() - 1;
+        searchDirection = -1;
+        break;
+    }
+    case GoToFileMode::random: {
+        if (fileList.size() > 1) {
+            int randomIndex;
+            do {
+                randomIndex = QRandomGenerator::global()->bounded(int(fileList.size()));
+            } while (randomIndex == newIndex);
+            newIndex = randomIndex;
+        }
+        searchDirection = 1;
+        break;
+    }
+    }
+
+    if (searchDirection != 0) {
+        while (searchDirection == 1 && newIndex < fileList.size() - 1
+               && !QFile::exists(fileList.value(newIndex).absoluteFilePath))
+            newIndex++;
+        while (searchDirection == -1 && newIndex > 0
+               && !QFile::exists(fileList.value(newIndex).absoluteFilePath))
+            newIndex--;
+    }
+
+    const QString nextImageFilePath = fileList.value(newIndex).absoluteFilePath;
+
+    if (!QFile::exists(nextImageFilePath)
+        || nextImageFilePath == currentFileDetails.fileInfo.absoluteFilePath())
+        return false;
+
+    if (shouldRetryFolderInfoUpdate) {
+        // If the user just deleted a file through qView, closeImage will have been called which
+        // empties currentFileDetails.fileInfo. In this case updateFolderInfo can't infer the
+        // directory from fileInfo like it normally does, so we'll explicity pass in the folder
+        // here.
+        updateFolderInfo(QFileInfo(nextImageFilePath).path());
+    }
+
+    if (reachedEnd)
+        return false;
+
+    loadFile(nextImageFilePath);
+    return true;
 }
 
 QVImageCore::FolderScanSettings QVImageCore::currentFolderScanSettings() const

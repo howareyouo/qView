@@ -106,6 +106,36 @@ void QVPlatformFunctions::openWithInvokeAssocHandler(const QString &filePath,
 #endif
 }
 
+void QVPlatformFunctions::setWindowMenu(QMenu *menu)
+{
+#ifdef COCOA_LOADED
+    QVCocoaFunctions::setWindowMenu(menu);
+#else
+    Q_UNUSED(menu)
+#endif
+}
+
+int QVPlatformFunctions::getTitlebarHeight(QWindow *window)
+{
+#ifdef COCOA_LOADED
+    return QVCocoaFunctions::getTitlebarHeight(window);
+#else
+    Q_UNUSED(window)
+    return 0;
+#endif
+}
+
+QList<OpenWith::OpenWithItem> QVPlatformFunctions::getOpenWithItems(const QString &filePath)
+{
+#if defined(Q_OS_MACOS) && defined(COCOA_LOADED)
+    return QVCocoaFunctions::getOpenWithItems(filePath);
+#elif defined(Q_OS_WIN) && defined(WIN32_LOADED)
+    return QVWin32Functions::getOpenWithItems(filePath);
+#else
+    return OpenWith::getOpenWithItemsFromDesktopFiles(filePath);
+#endif
+}
+
 QVPlatformFunctions::TrashOutcome QVPlatformFunctions::moveToTrash(const QString &filePath,
                                                                    QString *trashedPath)
 {

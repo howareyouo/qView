@@ -4,7 +4,6 @@
 #include "qvplatformfunctions.h"
 #include "qvprofiler.h"
 #include "qvrenamedialog.h"
-#include "windowgeometry.h"
 
 #include <QFileDialog>
 #include <QString>
@@ -53,7 +52,6 @@ MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent), ui(new Ui::MainWi
 #endif
 
     // Initialize variables
-    justLaunchedWithImage = false;
     storedWindowState = Qt::WindowNoState;
     openWithNeedsPopulate = true;
 
@@ -68,8 +66,6 @@ MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent), ui(new Ui::MainWi
 
     // Connect graphicsview signals
     connect(graphicsView, &QVGraphicsView::fileChanged, this, &MainWindow::fileChanged);
-    connect(graphicsView, &QVGraphicsView::updatedLoadedPixmapItem, this,
-            &MainWindow::setWindowSize);
     connect(graphicsView, &QVGraphicsView::cancelSlideshow, this, &MainWindow::cancelSlideshow);
 
     // Initialize escape shortcut
@@ -86,7 +82,7 @@ MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent), ui(new Ui::MainWi
     info = new QVInfoDialog(this);
 
     // Timer for slideshow
-    connect(slideshowController.getTimer(), &QTimer::timeout, this, &MainWindow::slideshowAction);
+    connect(&slideshowTimer, &QTimer::timeout, this, &MainWindow::slideshowAction);
 
     QVProfile::record("startup: window setup", startupTimer.nsecsElapsed());
     startupTimer.restart();
@@ -116,9 +112,7 @@ MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent), ui(new Ui::MainWi
         contextMenu->addSeparator();
         actionManager.addCloneOfAction(contextMenu, "options");
 
-        connect(contextMenu, &QMenu::triggered, this, [this](QAction *triggeredAction) {
-            ActionManager::actionTriggered(triggeredAction, this);
-        });
+        actionManager.attachMenu(contextMenu, this);
     }
 
     {
@@ -138,9 +132,7 @@ MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent), ui(new Ui::MainWi
             actionManager.addCloneOfAction(virtualMenu, key);
         }
         addActions(virtualMenu->actions());
-        connect(virtualMenu, &QMenu::triggered, this, [this](QAction *triggeredAction) {
-            ActionManager::actionTriggered(triggeredAction, this);
-        });
+        actionManager.attachMenu(virtualMenu, this);
     }
 
     QVProfile::record("startup: window menus", startupTimer.nsecsElapsed());
@@ -175,15 +167,8 @@ MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent), ui(new Ui::MainWi
     QSettings settings;
     restoreGeometry(settings.value("geometry").toByteArray());
 
-    // The zoom the last session ended at only comes back when the user asked for the zoom to be
-    // remembered. It's applied once this window has loaded its first image.
-    zoomRestorePending =
-            qvApp->getSettingsManager().getBool(SettingsManager::Setting::RememberZoom);
-    zoomRestoreRecord = settings.value("lastzoom").toString();
-    zoomRestoreOriginalSize = settings.value("lastzoomactualsize", false).toBool();
-
     // Exiting without closing the window skips closeEvent, so save the zoom on the way out too
-    connect(qApp, &QCoreApplication::aboutToQuit, this, &MainWindow::saveZoom);
+    connect(qApp, &QCoreApplication::aboutToQuit, graphicsView, &QVGraphicsView::saveSessionZoom);
 
     QVProfile::record("startup: window restore", startupTimer.nsecsElapsed());
 
@@ -246,7 +231,7 @@ void MainWindow::closeEvent(QCloseEvent *event)
     settings.setValue("geometry", saveGeometry());
 
     // Save the zoom the session ends at so the next launch can go back to it
-    saveZoom();
+    graphicsView->saveSessionZoom();
 
     qvApp->deleteFromLastActiveWindows(this);
     qvApp->getActionManager().untrackClonedActions(contextMenu);
@@ -255,17 +240,6 @@ void MainWindow::closeEvent(QCloseEvent *event)
     qvApp->getActionManager().untrackClonedActions(virtualMenu);
 
     QMainWindow::closeEvent(event);
-}
-
-void MainWindow::saveZoom()
-{
-    if (!getCurrentFileDetails().isPixmapLoaded
-        || !qvApp->getSettingsManager().getBool(SettingsManager::Setting::RememberZoom))
-        return;
-
-    QSettings settings;
-    settings.setValue("lastzoom", graphicsView->getZoomRecord());
-    settings.setValue("lastzoomactualsize", graphicsView->getIsOriginalSize());
 }
 
 void MainWindow::changeEvent(QEvent *event)
@@ -307,7 +281,7 @@ void MainWindow::mousePressEvent(QMouseEvent *event)
         if (getCurrentFileDetails().isPixmapLoaded && graphicsView->isResetScale())
             toggleFullScreen();
         else
-            resetZoom();
+            graphicsView->returnToFit();
     }
 
     QMainWindow::mousePressEvent(event);
@@ -383,11 +357,7 @@ void MainWindow::fullscreenChanged()
     const bool isFullscreen = windowState().testFlag(Qt::WindowFullScreen);
     const QString text = isFullscreen ? tr("Exit F&ull Screen") : tr("Enter F&ull Screen");
     const QIcon icon = QIcon::fromTheme(isFullscreen ? "view-restore" : "view-fullscreen");
-    qvApp->getActionManager().forEachCloneOfAction(
-            "fullscreen", [&text, &icon](QAction *fullscreenAction) {
-                fullscreenAction->setText(text);
-                fullscreenAction->setIcon(icon);
-            }, this);
+    qvApp->getActionManager().setClonePresentation("fullscreen", text, icon, this);
     ui->fullscreenLabel->setVisible(
             isFullscreen
             && qvApp->getSettingsManager().getBool(SettingsManager::Setting::FullScreenDetails));
@@ -449,15 +419,13 @@ void MainWindow::settingsUpdated()
 #endif
 
     // slideshow timer
-    slideshowController.setInterval(static_cast<int>(
+    slideshowTimer.setInterval(static_cast<int>(
             settingsManager.getDouble(SettingsManager::Setting::SlideshowTimer) * 1000));
 
     ui->fullscreenLabel->setVisible(
             settingsManager.getBool(SettingsManager::Setting::FullScreenDetails)
             && windowState().testFlag(Qt::WindowFullScreen));
     updateFullscreenLabelGeometry();
-
-    setWindowSize();
 
     // repaint in case background color changed
     update();
@@ -477,9 +445,7 @@ void MainWindow::ensureMenuBar()
     for (auto action : menubarActions) {
         action->setShortcutContext(Qt::WidgetShortcut);
     }
-    connect(menuBar(), &QMenuBar::triggered, this, [this](QAction *triggeredAction) {
-        ActionManager::actionTriggered(triggeredAction, this);
-    });
+    actionManager.attachMenuBar(menuBar(), this);
 }
 
 void MainWindow::updateFrameless()
@@ -539,14 +505,6 @@ void MainWindow::fileChanged()
     updateWindowTitle();
     updateWindowFilePath();
 
-    // A zoom saved by the last session can only go back on once the window has taken the size of
-    // the image that just loaded, since resizing it refits the image. This is the first point
-    // after that, and it only happens for the first image this window shows.
-    if (zoomRestorePending) {
-        zoomRestorePending = false;
-        graphicsView->restoreZoom(zoomRestoreRecord, zoomRestoreOriginalSize);
-    }
-
     // repaint to handle error message
     update();
 }
@@ -555,41 +513,18 @@ void MainWindow::disableActions()
 {
     QV_PROFILE_SCOPE("open: action states");
 
-    using EnableRule = ActionManager::EnableRule;
-
     const auto &actionManager = qvApp->getActionManager();
-    const auto &enableRules = actionManager.getEnableRules();
-    for (auto it = enableRules.constBegin(); it != enableRules.constEnd(); ++it) {
-        bool enabled;
-        switch (it.value()) {
-        case EnableRule::PixmapLoaded:
-            enabled = getCurrentFileDetails().isPixmapLoaded;
-            break;
-        case EnableRule::MovieLoaded:
-            enabled = getCurrentFileDetails().isMovieLoaded;
-            break;
-        case EnableRule::FolderLoaded:
-            enabled = !getCurrentFileDetails().folderFileInfoList.isEmpty();
-            break;
-        case EnableRule::UndoAvailable:
-            enabled = fileOperations.canUndo();
-            break;
-        case EnableRule::Always:
-            enabled = true;
-            break;
-        default:
-            enabled = false;
-            break;
-        }
 
-        actionManager.forEachCloneOfAction(
-                it.key(), [enabled](QAction *clone) { clone->setEnabled(enabled); }, this);
-    }
+    ActionManager::EnableState state;
+    state.pixmapLoaded = getCurrentFileDetails().isPixmapLoaded;
+    state.movieLoaded = getCurrentFileDetails().isMovieLoaded;
+    state.folderLoaded = !getCurrentFileDetails().folderFileInfoList.isEmpty();
+    state.undoAvailable = fileOperations.canUndo();
+    actionManager.applyEnableState(state, this);
 
     const auto &openWithMenus = actionManager.getAllClonesOfMenu("openwith", this);
-    for (const auto &menu : openWithMenus) {
-        menu->setEnabled(getCurrentFileDetails().isPixmapLoaded);
-    }
+    for (const auto &menu : openWithMenus)
+        menu->setEnabled(state.pixmapLoaded);
 }
 
 void MainWindow::requestPopulateOpenWithMenu()
@@ -626,9 +561,9 @@ void MainWindow::populateOpenWithMenu(const QList<OpenWith::OpenWithItem> openWi
                     action->setIcon(QIcon::fromTheme(openWithItem.iconName));
                 else
                     action->setIcon(openWithItem.icon);
-                auto data = action->data().toList();
-                data.replace(1, QVariant::fromValue(openWithItem));
-                action->setData(data);
+                const ActionManager::Payload payload = ActionManager::payloadOf(action);
+                ActionManager::setPayload(action, payload.key,
+                                          QVariant::fromValue(openWithItem));
             });
 }
 
@@ -689,57 +624,6 @@ void MainWindow::updateWindowFilePath()
     const bool shouldPopulate = getCurrentFileDetails().isPixmapLoaded;
     windowHandle()->setFilePath(shouldPopulate ? getCurrentFileDetails().fileInfo.absoluteFilePath()
                                                : "");
-}
-
-void MainWindow::setWindowSize()
-{
-    if (!getCurrentFileDetails().isPixmapLoaded)
-        return;
-
-    // check if the program is configured to resize the window
-    int windowResizeMode =
-            qvApp->getSettingsManager().getInt(SettingsManager::Setting::WindowResizeMode);
-    if (!(windowResizeMode == SettingsManager::WindowResizeAlways
-          || (windowResizeMode == SettingsManager::WindowResizeOnLaunch
-              && justLaunchedWithImage)))
-        return;
-
-    justLaunchedWithImage = false;
-
-    // check if window is maximized or fullscreened
-    if (windowState().testFlag(Qt::WindowMaximized) || windowState().testFlag(Qt::WindowFullScreen))
-        return;
-
-    qreal minWindowResizedPercentage =
-            qvApp->getSettingsManager().getInt(SettingsManager::Setting::MinWindowResizedPercentage)
-            / 100.0;
-    qreal maxWindowResizedPercentage =
-            qvApp->getSettingsManager().getInt(SettingsManager::Setting::MaxWindowResizedPercentage)
-            / 100.0;
-
-    // Use the full-resolution size: while a preview decode is on screen the loaded
-    // pixmap is smaller than the actual image
-    QSize imageSize = getCurrentFileDetails().fullPixmapSize;
-    imageSize -= QSize(4, 4);
-
-#ifdef Q_OS_WIN
-    // Windows reports the wrong minimum width, so we constrain the image size relative to the dpi
-    // to stop weirdness with tiny images
-    const QSize minimumImageSize(qRound(logicalDpiX() * 1.5), logicalDpiY() / 2);
-#else
-    const QSize minimumImageSize;
-#endif
-
-    WindowGeometry::resizeToImage(*this, imageSize, minWindowResizedPercentage,
-                                  maxWindowResizedPercentage, minimumImageSize);
-
-    // The size the image was given is where zooming out stops moving the window
-    graphicsView->rememberFittedWindowSize();
-}
-
-void MainWindow::setJustLaunchedWithImage(bool value)
-{
-    justLaunchedWithImage = value;
 }
 
 void MainWindow::openUrl(const QUrl &url)
@@ -843,12 +727,6 @@ void MainWindow::rename()
     renameDialog->open();
 }
 
-void MainWindow::resetZoom()
-{
-    graphicsView->resetScale();
-    graphicsView->restoreWindowSize();
-}
-
 void MainWindow::saveFrameAs()
 {
     if (!getCurrentFileDetails().isMovieLoaded)
@@ -886,11 +764,7 @@ void MainWindow::pause()
     const QString text = isRunning ? tr("Res&ume") : tr("Pause");
     const QIcon icon = QIcon::fromTheme(isRunning ? "media-playback-start"
                                                   : "media-playback-pause");
-    qvApp->getActionManager().forEachCloneOfAction(
-            "pause", [&text, &icon](QAction *pauseAction) {
-                pauseAction->setText(text);
-                pauseAction->setIcon(icon);
-            }, this);
+    qvApp->getActionManager().setClonePresentation("pause", text, icon, this);
 }
 
 void MainWindow::nextFrame()
@@ -903,12 +777,21 @@ void MainWindow::nextFrame()
 
 void MainWindow::toggleSlideshow()
 {
-    slideshowController.toggle(*this);
+    if (slideshowTimer.isActive())
+        slideshowTimer.stop();
+    else
+        slideshowTimer.start();
+
+    const bool running = slideshowTimer.isActive();
+    const QString text = tr(running ? "Stop S&lideshow" : "Start S&lideshow");
+    const QIcon icon = QIcon::fromTheme(running ? "media-playback-stop" : "media-playback-start");
+
+    qvApp->getActionManager().setClonePresentation("slideshow", text, icon, this);
 }
 
 void MainWindow::cancelSlideshow()
 {
-    if (slideshowController.isActive())
+    if (slideshowTimer.isActive())
         toggleSlideshow();
 }
 

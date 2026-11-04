@@ -2,8 +2,7 @@
 #include "ui_qvwelcomedialog.h"
 
 #include "qvapplication.h"
-
-#include <QSettings>
+#include "updatechecker.h"
 
 QVWelcomeDialog::QVWelcomeDialog(QWidget *parent) : QDialog(parent), ui(new Ui::QVWelcomeDialog)
 {
@@ -56,13 +55,9 @@ QVWelcomeDialog::QVWelcomeDialog(QWidget *parent) : QDialog(parent), ui(new Ui::
 #ifdef QV_DISABLE_ONLINE_VERSION_CHECK
     ui->updateCheckBox->hide();
 #else
-    ui->updateCheckBox->setChecked(qvApp->getSettingsManager().getBool(SettingsManager::Setting::UpdateNotifications));
-    connect(ui->updateCheckBox, &QCheckBox::stateChanged, qvApp, [](int state) {
-        QSettings settings;
-        settings.beginGroup("options");
-        settings.setValue("updatenotifications", state > 0);
-        qvApp->getSettingsManager().loadSettings();
-    });
+    ui->updateCheckBox->setChecked(UpdateChecker::notificationsEnabled());
+    connect(ui->updateCheckBox, &QCheckBox::stateChanged, this,
+            [](int state) { UpdateChecker::setNotificationsEnabled(state > 0); });
 #endif // QV_DISABLE_ONLINE_VERSION_CHECK
 }
 

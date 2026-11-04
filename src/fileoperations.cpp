@@ -7,7 +7,6 @@
 #include <QFile>
 #include <QFileInfo>
 #include <QMessageBox>
-#include <QSettings>
 
 void FileOperations::askDeleteFile(MainWindow &window, bool permanent)
 {
@@ -51,10 +50,10 @@ void FileOperations::askDeleteFile(MainWindow &window, bool permanent)
             return;
 
         if (!permanent) {
-            QSettings settings;
-            settings.beginGroup("options");
-            settings.setValue("askdelete", !msgBox->checkBox()->isChecked());
-            qvApp->getSettingsManager().loadSettings();
+            QMap<SettingsManager::Setting, QVariant> changedSettings;
+            changedSettings.insert(SettingsManager::Setting::AskDelete,
+                                   !msgBox->checkBox()->isChecked());
+            qvApp->getSettingsManager().applySettings(changedSettings);
         }
         window.deleteFile(permanent);
     });

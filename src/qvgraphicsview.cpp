@@ -1,11 +1,11 @@
 #include "qvgraphicsview.h"
+#include "mainwindow.h"
 #include "qvapplication.h"
 #include "qvinfodialog.h"
-#include "qvcocoafunctions.h"
 #include "qvplatformfunctions.h"
 #include "qvprofiler.h"
 #include "settingsmanager.h"
-#include <QRandomGenerator>
+#include "windowgeometry.h"
 #include <QWheelEvent>
 #include <QGraphicsPixmapItem>
 #include <QGraphicsScene>
@@ -71,6 +71,9 @@ QVGraphicsView::QVGraphicsView(QWidget *parent) : QGraphicsView(parent)
     connect(&qvApp->getSettingsManager(), &SettingsManager::settingsUpdated, this,
             &QVGraphicsView::settingsUpdated);
     settingsUpdated();
+
+    // The zoom the last session ended at goes on the first image this view presents
+    restoreSessionZoom();
 }
 
 // Events
@@ -171,7 +174,7 @@ void QVGraphicsView::mousePressEvent(QMouseEvent *event)
     if (event->button() == Qt::LeftButton && isWindowMovable()) {
 #ifdef COCOA_LOADED
         // Check if click is in titlebar region
-        int titlebarHeight = QVCocoaFunctions::getTitlebarHeight(window()->windowHandle());
+        int titlebarHeight = QVPlatformFunctions::getTitlebarHeight(window()->windowHandle());
         if (event->pos().y() <= titlebarHeight) {
             if (!startWindowMove()) {
                 startFallbackWindowMove();
@@ -527,34 +530,6 @@ void QVGraphicsView::zoom(qreal requestedStep, QPoint pos)
     }
 }
 
-static QScreen *screenForWindow(const QWidget *viewWindow)
-{
-    QScreen *foundScreen =
-            viewWindow ? QGuiApplication::screenAt(viewWindow->frameGeometry().center()) : nullptr;
-    return foundScreen ? foundScreen : QGuiApplication::primaryScreen();
-}
-
-static void resizeWindowKeepingCenter(QWidget *viewWindow, const QSize &targetSize)
-{
-    const QRect availableGeometry = screenForWindow(viewWindow)->availableGeometry();
-    const QPoint frameOffset =
-            viewWindow->geometry().topLeft() - viewWindow->frameGeometry().topLeft();
-    const QSize frameSize = viewWindow->frameGeometry().size() - viewWindow->size() + targetSize;
-
-    QRect targetFrameRect(QPoint(), frameSize);
-    targetFrameRect.moveCenter(viewWindow->frameGeometry().center());
-    if (targetFrameRect.left() < availableGeometry.left())
-        targetFrameRect.moveLeft(availableGeometry.left());
-    if (targetFrameRect.top() < availableGeometry.top())
-        targetFrameRect.moveTop(availableGeometry.top());
-    if (targetFrameRect.right() > availableGeometry.right())
-        targetFrameRect.moveRight(availableGeometry.right());
-    if (targetFrameRect.bottom() > availableGeometry.bottom())
-        targetFrameRect.moveBottom(availableGeometry.bottom());
-
-    viewWindow->setGeometry(QRect(targetFrameRect.topLeft() + frameOffset, targetSize));
-}
-
 void QVGraphicsView::applyZoomWindowResize(const QSize &targetSize)
 {
     QWidget *viewWindow = window();
@@ -566,7 +541,7 @@ void QVGraphicsView::applyZoomWindowResize(const QSize &targetSize)
     // translucent window shows as a flash of whatever is behind it.
     const bool updatesWereEnabled = viewWindow->updatesEnabled();
     viewWindow->setUpdatesEnabled(false);
-    resizeWindowKeepingCenter(viewWindow, targetSize);
+    WindowGeometry::resizeKeepingCenter(*viewWindow, targetSize);
     if (updatesWereEnabled) {
         viewWindow->setUpdatesEnabled(true);
         viewWindow->repaint();
@@ -604,9 +579,7 @@ qreal QVGraphicsView::planGrowWindowForZoom(qreal scaleFactor, QSize &targetSize
         return 1.0;
 
     const QSize currentSize = viewWindow->size();
-    const QSize frameExtraSize = viewWindow->frameGeometry().size() - currentSize;
-    const QSize maximumSize =
-            screenForWindow(viewWindow)->availableGeometry().size() - frameExtraSize;
+    const QSize maximumSize = WindowGeometry::maximumWindowSize(*viewWindow);
 
     // Grow both dimensions by the same factor so the window keeps its shape, and stop as soon as
     // either dimension reaches the screen instead of stretching the other one towards it
@@ -823,13 +796,69 @@ void QVGraphicsView::updateLoadedPixmapItem()
     const bool reuseScale = qvGetSettingBool(SettingsManager::Setting::RememberZoom)
             && !isOriginalSize && hasSameShape(previousSize, scaledSize);
 
+    // Zero means the fit is the whole story; a scale on top of it is only there when the previous
+    // image was zoomed and the settings ask for that zoom to carry over
+    presentImage(reuseScale ? previousScale : 0);
+}
+
+// Shows the image that has just been loaded: the fit comes first, then the size the window gives
+// the image, and only then does a zoom go back on top, since each of the three refits the image.
+void QVGraphicsView::presentImage(qreal scaleToKeep)
+{
     resetScale();
+    fitWindowToImage();
 
-    emit updatedLoadedPixmapItem();
+    if (sessionZoomPending) {
+        sessionZoomPending = false;
+        restoreZoom(sessionZoomRecord, sessionZoomOriginalSize);
+    }
 
-    // Only once the window has resized itself for the new image, since resizing refits the image
-    if (reuseScale)
-        applyZoomRelativeToFit(previousScale);
+    if (scaleToKeep > 0)
+        applyZoomRelativeToFit(scaleToKeep);
+}
+
+void QVGraphicsView::fitWindowToImage()
+{
+    if (!getCurrentFileDetails().isPixmapLoaded)
+        return;
+
+    // check if the program is configured to resize the window
+    const int windowResizeMode = qvGetSettingInt(SettingsManager::Setting::WindowResizeMode);
+    if (!(windowResizeMode == SettingsManager::WindowResizeAlways
+          || (windowResizeMode == SettingsManager::WindowResizeOnLaunch
+              && justLaunchedWithImage)))
+        return;
+
+    // The launch size belongs to the image the window was launched with. Cleared before the window
+    // state is looked at, so launching into a maximized window does not resize the next image
+    justLaunchedWithImage = false;
+
+    auto *mainWindow = qobject_cast<MainWindow *>(window());
+    if (!mainWindow)
+        return;
+
+    // check if window is maximized or fullscreened
+    if (mainWindow->windowState().testFlag(Qt::WindowMaximized)
+        || mainWindow->windowState().testFlag(Qt::WindowFullScreen))
+        return;
+
+    // Use the full-resolution size: while a preview decode is on screen the loaded
+    // pixmap is smaller than the actual image
+    QSize imageSize = getCurrentFileDetails().fullPixmapSize;
+    imageSize -= QSize(4, 4);
+
+#ifdef Q_OS_WIN
+    // Windows reports the wrong minimum width, so we constrain the image size relative to the dpi
+    // to stop weirdness with tiny images
+    const QSize minimumImageSize(qRound(logicalDpiX() * 1.5), logicalDpiY() / 2);
+#else
+    const QSize minimumImageSize;
+#endif
+
+    WindowGeometry::resizeToImage(*mainWindow, imageSize, minimumImageSize);
+
+    // The size the image was given is where zooming out stops moving the window
+    rememberFittedWindowSize();
 }
 
 void QVGraphicsView::fullPixmapLoaded()
@@ -875,6 +904,14 @@ void QVGraphicsView::resetScale()
 
     if (qvGetSettingBool(SettingsManager::Setting::ScalingEnabled))
         expensiveScaleTimerNew->start();
+}
+
+// Going back to the fit means shrinking the window back to the size it grew from, which is the
+// window-sized counterpart of resetScale
+void QVGraphicsView::returnToFit()
+{
+    resetScale();
+    restoreWindowSize();
 }
 
 // A scale within FIT_EPSILON of the fit scale is the fit scale, which is the only scale a zoom
@@ -1015,6 +1052,34 @@ void QVGraphicsView::restoreZoom(const QString &zoomRecord, bool originalSizeMod
     applyZoomRelativeToFit(zoomIsRelativeToFit ? zoomValue : zoomValue / fitScale);
 }
 
+// Writes the zoom this session ends at, so the next one can start where this one left off
+void QVGraphicsView::saveSessionZoom()
+{
+    if (!getCurrentFileDetails().isPixmapLoaded
+        || !qvGetSettingBool(SettingsManager::Setting::RememberZoom))
+        return;
+
+    QSettings settings;
+    settings.setValue("lastzoom", getZoomRecord());
+    settings.setValue("lastzoomactualsize", getIsOriginalSize());
+}
+
+// Reads the zoom the last session ended at, if the settings ask for it to come back. It goes on the
+// first image this view presents.
+void QVGraphicsView::restoreSessionZoom()
+{
+    if (!qvGetSettingBool(SettingsManager::Setting::RememberZoom))
+        return;
+
+    QSettings settings;
+    sessionZoomRecord = settings.value("lastzoom").toString();
+    if (sessionZoomRecord.isEmpty())
+        return;
+
+    sessionZoomOriginalSize = settings.value("lastzoomactualsize", false).toBool();
+    sessionZoomPending = true;
+}
+
 // The largest zoom the screen has room for, so that putting a saved zoom back never leaves part of
 // the image off screen. It is measured from the size the image takes up in the view right now, and
 // the room left is what the screen keeps once the window frame and the view's border are taken off.
@@ -1024,7 +1089,7 @@ qreal QVGraphicsView::maximumScaleOnScreen() const
     if (displayed.isEmpty())
         return absoluteTransform.m11();
 
-    const QSize room = screenForWindow(window())->availableGeometry().size()
+    const QSize room = WindowGeometry::screenFor(*window())->availableSize()
                        - (window()->frameGeometry().size() - viewport()->size());
     if (room.isEmpty())
         return absoluteTransform.m11();
@@ -1055,104 +1120,10 @@ void QVGraphicsView::originalSize()
     isOriginalSize = true;
 }
 
-void QVGraphicsView::goToFile(const GoToFileMode &mode, int index)
+void QVGraphicsView::goToFile(GoToFileMode mode, int index)
 {
-    bool shouldRetryFolderInfoUpdate = false;
-
-    // Update folder info only after a little idle time as an optimization for when
-    // the user is rapidly navigating through files.
-    if (!getCurrentFileDetails().timeSinceLoaded.isValid()
-        || getCurrentFileDetails().timeSinceLoaded.hasExpired(3000)) {
-        // Make sure the file still exists because if it disappears from the file listing we'll lose
-        // track of our index within the folder. Use the static 'exists' method to avoid caching.
-        // If we skip updating now, flag it for retry later once we locate a new file.
-        if (QFile::exists(getCurrentFileDetails().fileInfo.absoluteFilePath()))
-            imageCore.updateFolderInfoAsync();
-        else
-            shouldRetryFolderInfoUpdate = true;
-    }
-
-    const auto &fileList = getCurrentFileDetails().folderFileInfoList;
-    if (fileList.isEmpty())
-        return;
-
-    int newIndex = getCurrentFileDetails().loadedIndexInFolder;
-    int searchDirection = 0;
-
-    switch (mode) {
-    case GoToFileMode::constant: {
-        newIndex = index;
-        break;
-    }
-    case GoToFileMode::first: {
-        newIndex = 0;
-        searchDirection = 1;
-        break;
-    }
-    case GoToFileMode::previous: {
-        if (newIndex == 0) {
-            if (qvGetSettingBool(SettingsManager::Setting::LoopFoldersEnabled))
-                newIndex = fileList.size() - 1;
-            else
-                emit cancelSlideshow();
-        } else
-            newIndex--;
-        searchDirection = -1;
-        break;
-    }
-    case GoToFileMode::next: {
-        if (fileList.size() - 1 == newIndex) {
-            if (qvGetSettingBool(SettingsManager::Setting::LoopFoldersEnabled))
-                newIndex = 0;
-            else
-                emit cancelSlideshow();
-        } else
-            newIndex++;
-        searchDirection = 1;
-        break;
-    }
-    case GoToFileMode::last: {
-        newIndex = fileList.size() - 1;
-        searchDirection = -1;
-        break;
-    }
-    case GoToFileMode::random: {
-        if (fileList.size() > 1) {
-            int randomIndex;
-            do {
-                randomIndex = QRandomGenerator::global()->bounded(int(fileList.size()));
-            } while (randomIndex == newIndex);
-            newIndex = randomIndex;
-        }
-        searchDirection = 1;
-        break;
-    }
-    }
-
-    if (searchDirection != 0) {
-        while (searchDirection == 1 && newIndex < fileList.size() - 1
-               && !QFile::exists(fileList.value(newIndex).absoluteFilePath))
-            newIndex++;
-        while (searchDirection == -1 && newIndex > 0
-               && !QFile::exists(fileList.value(newIndex).absoluteFilePath))
-            newIndex--;
-    }
-
-    const QString nextImageFilePath = fileList.value(newIndex).absoluteFilePath;
-
-    if (!QFile::exists(nextImageFilePath)
-        || nextImageFilePath == getCurrentFileDetails().fileInfo.absoluteFilePath())
-        return;
-
-    if (shouldRetryFolderInfoUpdate) {
-        // If the user just deleted a file through qView, closeImage will have been called which
-        // empties currentFileDetails.fileInfo. In this case updateFolderInfo can't infer the
-        // directory from fileInfo like it normally does, so we'll explicity pass in the folder
-        // here.
-        imageCore.updateFolderInfo(QFileInfo(nextImageFilePath).path());
-    }
-
-    loadFile(nextImageFilePath);
+    if (!imageCore.goToFile(mode, index))
+        emit cancelSlideshow();
 }
 
 void QVGraphicsView::fitInViewMarginless(const QRectF &rect)
@@ -1286,7 +1257,7 @@ void QVGraphicsView::centerOn(const QGraphicsItem *item)
 void QVGraphicsView::settingsUpdated()
 {
     if (getCurrentFileDetails().isPixmapLoaded)
-        resetScale();
+        presentImage();
 }
 
 void QVGraphicsView::closeImage()

@@ -26,6 +26,20 @@ public:
         operator QString() const { return "SRecent(" + fileName + ", " + filePath + ")"; }
     };
 
+    // What an action carries in QAction::data(): its key, plus whatever its family keeps beside
+    // it. Library actions store the tag that says when they may run, generated entries store the
+    // item they stand for. Every read and write of that variant goes through here, so no caller
+    // has to know which shape an action happens to use.
+    struct Payload
+    {
+        QString key;
+        QVariant item;
+    };
+
+    static Payload payloadOf(const QAction *action);
+
+    static void setPayload(QAction *action, const QString &key, const QVariant &item = QVariant());
+
     static QList<QAction *> getAllNestedActions(const QList<QAction *> &givenActionList)
     {
         QList<QAction *> totalActionList;
@@ -39,20 +53,6 @@ public:
             totalActionList << action;
         }
         return totalActionList;
-    }
-
-    static QList<QAction *> getAllActionsOfType(const QList<QAction *> &givenActionList,
-                                                const QString &type)
-    {
-        QList<QAction *> allActionsOfType;
-
-        const auto allNestedActions = getAllNestedActions(givenActionList);
-        for (const auto &action : allNestedActions) {
-            if (action->data() == type)
-                allActionsOfType << action;
-        }
-
-        return allActionsOfType;
     }
 
     static QVariantList recentsListToVariantList(const QList<SRecent> &recentsList)
@@ -82,6 +82,16 @@ public:
         FolderLoaded,  // enabled when folder information is available
         UndoAvailable, // enabled when a deletion can be undone
         Always,        // enabled regardless of load state
+    };
+
+    // What the current window can do right now, in terms the enable rules are written against.
+    // Gathering this is the window's job; deciding which actions may run is this class's.
+    struct EnableState
+    {
+        bool pixmapLoaded = false;
+        bool movieLoaded = false;
+        bool folderLoaded = false;
+        bool undoAvailable = false;
     };
 
     explicit ActionManager(QObject *parent = nullptr);
@@ -119,6 +129,14 @@ public:
     void forEachInstanceOfAction(const QString &key,
                                  const std::function<void(QAction *)> &func) const;
 
+    // Sets the text and icon every clone of an action shows, for the actions whose wording
+    // follows their state (play/stop, pause/resume, enter/exit full screen)
+    void setClonePresentation(const QString &key, const QString &text, const QIcon &icon,
+                              QWidget *parent = nullptr) const;
+
+    // Turns an enable state into the enabled flags of every action a rule governs
+    void applyEnableState(const EnableState &state, QWidget *parent = nullptr) const;
+
     QList<QMenu *> getAllClonesOfMenu(const QString &key) const;
 
     QList<QMenu *> getAllClonesOfMenu(const QString &key, QWidget *parent) const;
@@ -142,6 +160,12 @@ public:
     QMenu *buildHelpMenu(bool addIcon = true, QWidget *parent = nullptr);
 
     QMenu *buildRecentsMenu(bool includeClearAction = true, QWidget *parent = nullptr);
+
+    // Every menu built here holds clones, so whatever it triggers has to be routed back to the
+    // definition that answers for it. Attaching the menu does that in one place.
+    void attachMenu(QMenu *menu, MainWindow *window);
+
+    void attachMenuBar(QMenuBar *menuBar, MainWindow *window);
 
     void loadRecentsList();
 
@@ -172,8 +196,6 @@ public:
     const QList<SRecent> &getRecentsList() const { return recentsList; }
 
     const QHash<QString, QAction *> &getActionLibrary() const { return actionLibrary; }
-
-    const QHash<QString, EnableRule> &getEnableRules() const { return actionEnableRules; }
 
     int getRecentsListMaxLength() const { return recentsListMaxLength; };
     int getOpenWithMaxLength() const { return openWithMaxLength; };

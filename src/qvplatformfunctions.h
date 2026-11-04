@@ -1,6 +1,8 @@
 #ifndef QVPLATFORMFUNCTIONS_H
 #define QVPLATFORMFUNCTIONS_H
 
+#include "openwith.h"
+
 #include <QByteArray>
 #include <QString>
 #include <QStringList>
@@ -38,6 +40,15 @@ public:
     static void setAlternate(QMenu *menu, int index);
 
     static void setDockRecents(const QStringList &recentPathsList);
+
+    // Puts the menu the window manager shows for a window, which is the OS menu bar on macOS
+    static void setWindowMenu(QMenu *menu);
+
+    static int getTitlebarHeight(QWindow *window);
+
+    // The applications that can open the file: the association lists on macOS and Windows, the
+    // desktop entries elsewhere
+    static QList<OpenWith::OpenWithItem> getOpenWithItems(const QString &filePath);
 
     static void openWithInvokeAssocHandler(const QString &filePath, void *winAssocHandler);
 

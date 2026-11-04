@@ -13,12 +13,17 @@ public:
 
     void openDialog();
 
+    // Whether the user wants to be told about new releases, and the one place that knows how that
+    // preference is stored: the welcome dialog asks and changes it here
+    static bool notificationsEnabled();
+    static void setNotificationsEnabled(bool enabled);
+
     double getLatestVersionNum() const { return latestVersionNum; }
 
 signals:
     void checkedUpdates();
 
-protected:
+private:
     void sendRequest(const QUrl &url);
 
     void readReply(QNetworkReply *reply);
@@ -27,7 +32,6 @@ protected:
 
     void setLastCheckTime(QDateTime value);
 
-private:
     const QString UPDATE_URL = "https://api.github.com/repos/jurplel/qview/releases";
     const QString DOWNLOAD_URL = "https://interversehq.com/qview/download/";
     // If update checking is enabled, this rate limits the auto-check that happens at startup

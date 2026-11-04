@@ -85,7 +85,7 @@ bool QVApplication::event(QEvent *event)
 
 void QVApplication::openFile(MainWindow *window, const QString &file, bool resize)
 {
-    window->setJustLaunchedWithImage(resize);
+    window->view().setLaunchingImage(resize);
     window->openFile(file);
 }
 
@@ -204,7 +204,7 @@ void QVApplication::checkedUpdates()
     if (aboutDialog) {
         aboutDialog->setLatestVersionNum(updateChecker.getLatestVersionNum());
     } else if (updateChecker.getLatestVersionNum() > VERSION
-               && getSettingsManager().getBool(SettingsManager::Setting::UpdateNotifications)) {
+               && UpdateChecker::notificationsEnabled()) {
         updateChecker.openDialog();
     }
 #endif // QV_DISABLE_ONLINE_VERSION_CHECK

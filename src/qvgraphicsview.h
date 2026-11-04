@@ -19,8 +19,8 @@ public:
     enum class ScaleMode { resetScale, zoom };
     Q_ENUM(ScaleMode)
 
-    enum class GoToFileMode { constant, first, previous, next, last, random };
-    Q_ENUM(GoToFileMode)
+    // The navigation cursor belongs to the folder listing it moves through
+    using GoToFileMode = QVImageCore::GoToFileMode;
 
     QMimeData *getMimeData() const;
     void loadMimeData(const QMimeData *mimeData);
@@ -39,14 +39,27 @@ public:
 
     void resetScale();
     void originalSize();
-    void restoreZoom(const QString &zoomRecord, bool originalSizeMode);
-    qreal maximumScaleOnScreen() const;
 
-    void restoreWindowSize();
+    // Going back to the fit means shrinking the window back to the size it grew from
+    void returnToFit();
 
-    void rememberFittedWindowSize();
+    // Shows the image that was just loaded: refits it, gives the window the image's size when the
+    // settings call for that, and puts scaleToKeep back on top. A zoom the last session ended at
+    // goes on the first image presented this way. Leaving scaleToKeep at zero shows the fit.
+    void presentImage(qreal scaleToKeep = 0);
 
-    void goToFile(const GoToFileMode &mode, int index = 0);
+    // Sizes the window to the image when the settings call for it, and records the size the image
+    // was given as the one zooming back out returns to
+    void fitWindowToImage();
+
+    // Marks the next image presented as the one the window was launched with, which is the only
+    // image the "resize on launch" mode resizes for
+    void setLaunchingImage(bool value) { justLaunchedWithImage = value; }
+
+    // Writes the zoom this view ends at, so the next session starts where this one left off
+    void saveSessionZoom();
+
+    void goToFile(GoToFileMode mode, int index = 0);
 
     void settingsUpdated();
 
@@ -65,17 +78,10 @@ public:
 
     bool isResetScale() const { return !isOriginalSize && qFuzzyCompare(currentScale, 1.0); }
 
-    // What a new session needs to put the zoom back: the shape of the image it belongs to and how
-    // far past the fit scale it was zoomed, written as "16:9,1.2x"
-    QString getZoomRecord() const;
-    bool getIsOriginalSize() const { return isOriginalSize; }
-
 signals:
     void cancelSlideshow();
 
     void fileChanged();
-
-    void updatedLoadedPixmapItem();
 
 protected:
     void wheelEvent(QWheelEvent *event) override;
@@ -121,6 +127,24 @@ private slots:
     void fullPixmapLoaded();
 
 private:
+    // What a new session needs to put the zoom back: the shape of the image it belongs to and how
+    // far past the fit scale it was zoomed, written as "16:9,1.2x"
+    QString getZoomRecord() const;
+    bool getIsOriginalSize() const { return isOriginalSize; }
+
+    // Puts the zoom a previous session ended at back on an image that has just been loaded. Has to
+    // run after the window has been given the new image's size, since that refits the image.
+    void restoreZoom(const QString &zoomRecord, bool originalSizeMode);
+
+    // Reads the zoom the last session ended at, if the settings ask for it to come back
+    void restoreSessionZoom();
+
+    qreal maximumScaleOnScreen() const;
+
+    void restoreWindowSize();
+
+    void rememberFittedWindowSize();
+
     void updateFilteringMode();
 
     void applyScale(qreal scaleFactor);
@@ -173,6 +197,14 @@ private:
     QPointF lastScrollRoundingError;
     QSize preZoomWindowSize;
     QSize zoomWindowFittedSize;
+
+    // Set when the image about to be presented is the one the window was launched with
+    bool justLaunchedWithImage = false;
+
+    // Zoom the last session ended at, put back on the first image this view presents
+    bool sessionZoomPending = false;
+    QString sessionZoomRecord;
+    bool sessionZoomOriginalSize = false;
 
     QTransform absoluteTransform;
     QTransform zoomBasis;

@@ -41,7 +41,6 @@ set(PROJECT_SOURCES
     src/fileoperations.cpp
     src/qvplatformfunctions.cpp
     src/urlopener.cpp
-    src/slideshowcontroller.cpp
     src/windowgeometry.cpp
     src/openwith.cpp
     src/qvgraphicsview.cpp
@@ -65,7 +64,6 @@ set(PROJECT_HEADERS
     src/fileoperations.h
     src/qvplatformfunctions.h
     src/urlopener.h
-    src/slideshowcontroller.h
     src/windowgeometry.h
     src/openwith.h
     src/qvgraphicsview.h

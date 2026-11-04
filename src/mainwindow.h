@@ -7,11 +7,12 @@
 #include "openwith.h"
 
 #include "fileoperations.h"
-#include "slideshowcontroller.h"
 #include "urlopener.h"
 
 #include <QMainWindow>
+#include <QMenuBar>
 #include <QShortcut>
+#include <QTimer>
 
 namespace Ui {
 class MainWindow;
@@ -39,10 +40,6 @@ public:
 
     void updateWindowFilePath();
 
-    void setWindowSize();
-
-    void setJustLaunchedWithImage(bool value);
-
     void openRecent(int i);
 
     void openUrl(const QUrl &url);
@@ -66,8 +63,6 @@ public:
     void paste();
 
     void rename();
-
-    void resetZoom();
 
     void saveFrameAs();
 
@@ -142,8 +137,6 @@ private:
     Ui::MainWindow *ui;
     QVGraphicsView *graphicsView;
 
-    void saveZoom();
-
     // Builds the menu bar the first time it is needed. It is skipped entirely when the menu bar
     // is disabled, since building it is one of the more expensive parts of window setup and its
     // actions also exist as clones in the virtual menu that holds the window shortcuts.
@@ -160,24 +153,17 @@ private:
 
     QColor customBackgroundColor;
 
-    bool justLaunchedWithImage;
-
     Qt::WindowStates storedWindowState;
 
     FileOperations fileOperations;
 
     UrlOpener urlOpener;
 
-    SlideshowController slideshowController;
+    QTimer slideshowTimer;
 
     QFutureWatcher<QList<OpenWith::OpenWithItem>> openWithFutureWatcher;
 
     bool openWithNeedsPopulate;
-
-    // Zoom the last session ended at, put back on the first image this window loads
-    bool zoomRestorePending;
-    QString zoomRestoreRecord;
-    bool zoomRestoreOriginalSize;
 };
 
 #endif // MAINWINDOW_H

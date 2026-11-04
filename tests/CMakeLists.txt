@@ -11,7 +11,6 @@ set(TEST_SOURCES
     ../src/fileoperations.cpp
     ../src/qvplatformfunctions.cpp
     ../src/urlopener.cpp
-    ../src/slideshowcontroller.cpp
     ../src/windowgeometry.cpp
     ../src/openwith.cpp
     ../src/qvgraphicsview.cpp

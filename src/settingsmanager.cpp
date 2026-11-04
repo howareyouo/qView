@@ -178,11 +178,19 @@ void SettingsManager::loadSettings()
         emit settingsUpdated();
 }
 
-void SettingsManager::setSetting(const QString &key, const QVariant &value)
+void SettingsManager::applySettings(const QMap<Setting, QVariant> &values)
 {
+    if (values.isEmpty())
+        return;
+
     QSettings settings;
     settings.beginGroup("options");
-    settings.setValue(key, value);
+    for (auto it = values.constBegin(); it != values.constEnd(); ++it) {
+        const QString &key = getSettingKey(it.key());
+        if (key.isEmpty())
+            continue;
+        settings.setValue(key, it.value());
+    }
     settings.endGroup();
 
     loadSettings();

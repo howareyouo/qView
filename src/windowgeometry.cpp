@@ -1,12 +1,13 @@
 #include "windowgeometry.h"
 #include "mainwindow.h"
+#include "qvapplication.h"
 
 #include <QGuiApplication>
 #include <QMenuBar>
 #include <QScreen>
 #include <QVarLengthArray>
 
-namespace WindowGeometry {
+namespace {
 
 // Initially copied from Qt source code (QGuiApplication::screenAt) and then customized
 QScreen *screenContaining(const QRect &rect)
@@ -33,17 +34,57 @@ QScreen *screenContaining(const QRect &rect)
     return bestScreen;
 }
 
-void resizeToImage(MainWindow &window, QSize imageSize, qreal minWindowResizedPercentage,
-                   qreal maxWindowResizedPercentage, const QSize &minimumImageSize)
-{
-    // Try to grab the current screen
-    QScreen *currentScreen = screenContaining(window.frameGeometry());
+} // namespace
 
-    // makeshift validity check
-    bool screenValid = QGuiApplication::screens().contains(currentScreen);
-    // Use first screen as fallback
-    if (!screenValid)
-        currentScreen = QGuiApplication::screens().at(0);
+namespace WindowGeometry {
+
+QScreen *screenFor(const QWidget &window)
+{
+    const QRect frameGeometry = window.frameGeometry();
+
+    // A window can straddle screens, and the one it covers most is the one it belongs to
+    if (QScreen *screen = screenContaining(frameGeometry))
+        return screen;
+
+    if (QScreen *screen = QGuiApplication::screenAt(frameGeometry.center()))
+        return screen;
+
+    return QGuiApplication::primaryScreen();
+}
+
+QSize maximumWindowSize(const QWidget &window)
+{
+    const QSize frameExtraSize = window.frameGeometry().size() - window.size();
+    return screenFor(window)->availableSize() - frameExtraSize;
+}
+
+void resizeKeepingCenter(QWidget &window, const QSize &targetSize)
+{
+    const QRect availableGeometry = screenFor(window)->availableGeometry();
+    const QPoint frameOffset = window.geometry().topLeft() - window.frameGeometry().topLeft();
+    const QSize frameSize = window.frameGeometry().size() - window.size() + targetSize;
+
+    QRect targetFrameRect(QPoint(), frameSize);
+    targetFrameRect.moveCenter(window.frameGeometry().center());
+    if (targetFrameRect.left() < availableGeometry.left())
+        targetFrameRect.moveLeft(availableGeometry.left());
+    if (targetFrameRect.top() < availableGeometry.top())
+        targetFrameRect.moveTop(availableGeometry.top());
+    if (targetFrameRect.right() > availableGeometry.right())
+        targetFrameRect.moveRight(availableGeometry.right());
+    if (targetFrameRect.bottom() > availableGeometry.bottom())
+        targetFrameRect.moveBottom(availableGeometry.bottom());
+
+    window.setGeometry(QRect(targetFrameRect.topLeft() + frameOffset, targetSize));
+}
+
+void resizeToImage(MainWindow &window, const QSize &imageSize, const QSize &minimumImageSize)
+{
+    const auto &settingsManager = qvApp->getSettingsManager();
+    const qreal minWindowResizedPercentage =
+            settingsManager.getInt(SettingsManager::Setting::MinWindowResizedPercentage) / 100.0;
+    const qreal maxWindowResizedPercentage =
+            settingsManager.getInt(SettingsManager::Setting::MaxWindowResizedPercentage) / 100.0;
 
     QSize extraWidgetsSize{ 0, 0 };
 
@@ -54,45 +95,28 @@ void resizeToImage(MainWindow &window, QSize imageSize, qreal minWindowResizedPe
     if (titlebarOverlap != 0)
         extraWidgetsSize.rheight() += titlebarOverlap;
 
-    const QSize windowFrameSize = window.frameGeometry().size() - window.geometry().size();
-    const QSize hardLimitSize = currentScreen->availableSize() - windowFrameSize - extraWidgetsSize;
-    const QSize screenSize = currentScreen->size();
+    const QSize hardLimitSize = maximumWindowSize(window) - extraWidgetsSize;
+    const QSize screenSize = screenFor(window)->size();
     const QSize minWindowSize = (screenSize * minWindowResizedPercentage).boundedTo(hardLimitSize);
     const QSize maxWindowSize = (screenSize * maxWindowResizedPercentage).boundedTo(hardLimitSize);
 
-    if (imageSize.width() < minWindowSize.width() && imageSize.height() < minWindowSize.height()) {
-        imageSize.scale(minWindowSize, Qt::KeepAspectRatio);
-    } else if (imageSize.width() > maxWindowSize.width()
-               || imageSize.height() > maxWindowSize.height()) {
-        imageSize.scale(maxWindowSize, Qt::KeepAspectRatio);
+    QSize fittedImageSize = imageSize;
+    if (fittedImageSize.width() < minWindowSize.width()
+        && fittedImageSize.height() < minWindowSize.height()) {
+        fittedImageSize.scale(minWindowSize, Qt::KeepAspectRatio);
+    } else if (fittedImageSize.width() > maxWindowSize.width()
+               || fittedImageSize.height() > maxWindowSize.height()) {
+        fittedImageSize.scale(maxWindowSize, Qt::KeepAspectRatio);
     }
 
     // Windows reports the wrong minimum width, so we constrain the image size relative to the dpi
     // to stop weirdness with tiny images
     if (!minimumImageSize.isEmpty()) {
-        if (imageSize.boundedTo(minimumImageSize) == imageSize)
-            imageSize = minimumImageSize;
+        if (fittedImageSize.boundedTo(minimumImageSize) == fittedImageSize)
+            fittedImageSize = minimumImageSize;
     }
 
-    // Match center after new geometry
-    // This is smoother than a single geometry set for some reason
-    QRect oldRect = window.geometry();
-    window.resize(imageSize + extraWidgetsSize);
-    QRect newRect = window.geometry();
-    newRect.moveCenter(oldRect.center());
-
-    // Ensure titlebar is not above or below the available screen area
-    const QRect availableScreenRect = currentScreen->availableGeometry();
-    const int topFrameHeight = window.geometry().top() - window.frameGeometry().top();
-    const int windowMinY = availableScreenRect.top() + topFrameHeight;
-    const int windowMaxY =
-            availableScreenRect.top() + availableScreenRect.height() - titlebarOverlap;
-    if (newRect.top() < windowMinY)
-        newRect.moveTop(windowMinY);
-    if (newRect.top() > windowMaxY)
-        newRect.moveTop(windowMaxY);
-
-    window.setGeometry(newRect);
+    resizeKeepingCenter(window, fittedImageSize + extraWidgetsSize);
 }
 
 }

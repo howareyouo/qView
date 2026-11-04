@@ -113,16 +113,13 @@ void QVOptionsDialog::modifySetting(SettingsManager::Setting setting, QVariant v
 
 void QVOptionsDialog::saveSettings()
 {
-    QSettings settings;
-    settings.beginGroup("options");
-
-    auto &settingsManager = qvApp->getSettingsManager();
+    QMap<SettingsManager::Setting, QVariant> changedSettings;
     for (auto it = transientSettings.constBegin(); it != transientSettings.constEnd(); ++it) {
-        const auto setting = static_cast<SettingsManager::Setting>(it.key());
-        settings.setValue(settingsManager.getSettingKey(setting), it.value());
+        changedSettings.insert(static_cast<SettingsManager::Setting>(it.key()), it.value());
     }
+    qvApp->getSettingsManager().applySettings(changedSettings);
 
-    settings.endGroup();
+    QSettings settings;
     settings.beginGroup("shortcuts");
 
     const auto &shortcutsList = qvApp->getShortcutManager().getShortcutsList();
@@ -130,8 +127,8 @@ void QVOptionsDialog::saveSettings()
         settings.setValue(shortcutsList.value(i).name, transientShortcuts.value(i));
     }
 
+    settings.endGroup();
     qvApp->getShortcutManager().updateShortcuts();
-    qvApp->getSettingsManager().loadSettings();
 }
 
 void QVOptionsDialog::syncSettings(bool defaults, bool makeConnections)

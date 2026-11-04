@@ -1,7 +1,6 @@
 #include "actionmanager.h"
 #include "mainwindow.h"
 #include "qvapplication.h"
-#include "qvcocoafunctions.h"
 #include "qvplatformfunctions.h"
 #include "qvprofiler.h"
 #include "openwith.h"
@@ -42,7 +41,7 @@ ActionManager::ActionManager(QObject *parent) : QObject(parent)
 
 #ifdef COCOA_LOADED
     windowMenu = new QMenu(tr("Window"));
-    QVCocoaFunctions::setWindowMenu(windowMenu);
+    QVPlatformFunctions::setWindowMenu(windowMenu);
 #endif
 }
 
@@ -82,6 +81,29 @@ QAction *ActionManager::addCloneOfAction(QWidget *parent, const QString &key)
     }
 
     return nullptr;
+}
+
+ActionManager::Payload ActionManager::payloadOf(const QAction *action)
+{
+    const QVariant data = action->data();
+
+    // A key with nothing to carry is stored on its own
+    if (data.typeId() == QMetaType::QString)
+        return { data.toString(), QVariant() };
+
+    const QVariantList parts = data.toList();
+    if (parts.isEmpty())
+        return {};
+
+    return { parts.first().toString(), parts.value(1) };
+}
+
+void ActionManager::setPayload(QAction *action, const QString &key, const QVariant &item)
+{
+    if (item.isValid())
+        action->setData(QVariantList{ key, item });
+    else
+        action->setData(key);
 }
 
 QAction *ActionManager::getAction(const QString &key) const
@@ -139,6 +161,44 @@ void ActionManager::forEachInstanceOfAction(const QString &key,
         func(action);
 }
 
+void ActionManager::setClonePresentation(const QString &key, const QString &text, const QIcon &icon,
+                                         QWidget *parent) const
+{
+    forEachCloneOfAction(
+            key,
+            [&text, &icon](QAction *action) {
+                action->setText(text);
+                action->setIcon(icon);
+            },
+            parent);
+}
+
+void ActionManager::applyEnableState(const EnableState &state, QWidget *parent) const
+{
+    for (auto it = actionEnableRules.constBegin(); it != actionEnableRules.constEnd(); ++it) {
+        bool enabled = true;
+        switch (it.value()) {
+        case EnableRule::PixmapLoaded:
+            enabled = state.pixmapLoaded;
+            break;
+        case EnableRule::MovieLoaded:
+            enabled = state.movieLoaded;
+            break;
+        case EnableRule::FolderLoaded:
+            enabled = state.folderLoaded;
+            break;
+        case EnableRule::UndoAvailable:
+            enabled = state.undoAvailable;
+            break;
+        case EnableRule::Always:
+            break;
+        }
+
+        forEachCloneOfAction(
+                it.key(), [enabled](QAction *clone) { clone->setEnabled(enabled); }, parent);
+    }
+}
+
 QList<QMenu *> ActionManager::getAllClonesOfMenu(const QString &key) const
 {
     return menuCloneLibrary.values(key);
@@ -159,14 +219,14 @@ QList<QMenu *> ActionManager::getAllClonesOfMenu(const QString &key, QWidget *pa
 void ActionManager::untrackClonedActions(const QList<QAction *> &actions)
 {
     for (const auto &action : actions) {
-        if (auto menu = action->menu()) {
-            QString key = action->data().toString();
-            if (key.length() != 0)
-                menuCloneLibrary.remove(key, menu);
-        } else {
-            QString key = action->data().toStringList().first();
+        const QString key = payloadOf(action).key;
+        if (key.isEmpty())
+            continue;
+
+        if (auto menu = action->menu())
+            menuCloneLibrary.remove(key, menu);
+        else
             actionCloneLibrary.remove(key, action);
-        }
     }
 }
 
@@ -266,6 +326,18 @@ QMenuBar *ActionManager::buildMenuBar(QWidget *parent)
     return menuBar;
 }
 
+void ActionManager::attachMenu(QMenu *menu, MainWindow *window)
+{
+    connect(menu, &QMenu::triggered, window,
+            [window](QAction *triggeredAction) { actionTriggered(triggeredAction, window); });
+}
+
+void ActionManager::attachMenuBar(QMenuBar *menuBar, MainWindow *window)
+{
+    connect(menuBar, &QMenuBar::triggered, window,
+            [window](QAction *triggeredAction) { actionTriggered(triggeredAction, window); });
+}
+
 QMenu *ActionManager::buildViewMenu(bool addIcon, QWidget *parent, bool includeFileInfo)
 {
     auto *viewMenu = new QMenu(tr("&View"), parent);
@@ -346,10 +418,11 @@ QMenu *ActionManager::buildRecentsMenu(bool includeClearAction, QWidget *parent)
         auto action = new QAction(tr("Empty"), recentsMenu);
         action->setVisible(false);
         action->setIconVisibleInMenu(true);
-        action->setData("recent" + QString::number(i));
+        const QString key = "recent" + QString::number(i);
+        setPayload(action, key);
 
         recentsMenu->addAction(action);
-        actionCloneLibrary.insert(action->data().toStringList().first(), action);
+        actionCloneLibrary.insert(key, action);
     }
 
     if (includeClearAction) {
@@ -530,20 +603,20 @@ QMenu *ActionManager::buildOpenWithMenu(QWidget *parent)
     openWithMenu->setDisabled(true);
 
     for (int i = 0; i < openWithMaxLength; i++) {
-
         auto action = new QAction(tr("Empty"), openWithMenu);
         action->setVisible(false);
         action->setIconVisibleInMenu(true);
-        action->setData(QVariantList({ "openwith" + QString::number(i), "" }));
+        const QString key = "openwith" + QString::number(i);
+        setPayload(action, key, QString());
 
         openWithMenu->addAction(action);
-        actionCloneLibrary.insert(action->data().toStringList().first(), action);
+        actionCloneLibrary.insert(key, action);
         // Some madness that will show or hide separator if an item marked as default is in the
         // first position
         if (i == 0) {
             connect(action, &QAction::changed, action, [action, openWithMenu] {
                 // If this menu item is default
-                if (action->data().toList().at(1).value<OpenWith::OpenWithItem>().isDefault) {
+                if (payloadOf(action).item.value<OpenWith::OpenWithItem>().isDefault) {
                     if (!openWithMenu->actions().at(1)->isSeparator())
                         openWithMenu->insertSeparator(openWithMenu->actions().at(1));
                 } else {
@@ -574,7 +647,7 @@ const ActionManager::ActionDefinition *findDefinition(const QString &key)
 
 void ActionManager::actionTriggered(QAction *triggeredAction)
 {
-    const auto key = triggeredAction->data().toStringList().first();
+    const QString key = payloadOf(triggeredAction).key;
 
     // Actions that may run without a relevant window skip the window lookup
     if (const auto *definition = findDefinition(key); definition && !definition->requiresWindow) {
@@ -592,9 +665,9 @@ void ActionManager::actionTriggered(QAction *triggeredAction)
 
 void ActionManager::actionTriggered(QAction *triggeredAction, MainWindow *relevantWindow)
 {
-    const auto key = triggeredAction->data().toStringList().first();
+    const auto payload = payloadOf(triggeredAction);
 
-    if (const auto *definition = findDefinition(key)) {
+    if (const auto *definition = findDefinition(payload.key)) {
         if (definition->run && (!definition->requiresWindow || relevantWindow))
             definition->run(relevantWindow, triggeredAction);
         return;
@@ -603,13 +676,11 @@ void ActionManager::actionTriggered(QAction *triggeredAction, MainWindow *releva
     if (!relevantWindow)
         return;
 
-    if (key.startsWith("recent")) {
-        QChar finalChar = key.at(key.length() - 1);
+    if (payload.key.startsWith("recent")) {
+        const QChar finalChar = payload.key.at(payload.key.length() - 1);
         relevantWindow->openRecent(finalChar.digitValue());
-    } else if (key.startsWith("openwith")) {
-        const auto &openWithItem =
-                triggeredAction->data().toList().at(1).value<OpenWith::OpenWithItem>();
-        relevantWindow->openWith(openWithItem);
+    } else if (payload.key.startsWith("openwith")) {
+        relevantWindow->openWith(payload.item.value<OpenWith::OpenWithItem>());
     }
 }
 
@@ -636,7 +707,7 @@ const QList<ActionManager::ActionDefinition> &ActionManager::definitions()
         { "reloadfile",
           [] {
               auto *action = new QAction(QIcon::fromTheme("view-refresh"), tr("Re&load File"));
-              action->setData({ "disable" });
+              setPayload(action, "disable");
               return action;
           },
           [](MainWindow *window, QAction *) { window->view().reloadFile(); },
@@ -654,7 +725,7 @@ const QList<ActionManager::ActionDefinition> &ActionManager::definitions()
               //: Open containing folder on macOS
               action->setText(tr("Show in &Finder"));
 #endif
-              action->setData({ "disable" });
+              setPayload(action, "disable");
               return action;
           },
           [](MainWindow *window, QAction *) { window->openContainingFolder(); },
@@ -672,7 +743,7 @@ const QList<ActionManager::ActionDefinition> &ActionManager::definitions()
           [] {
               auto *action = new QAction(QIcon::fromTheme("document-properties"),
                                          tr("Show File &Info"));
-              action->setData({ "disable" });
+              setPayload(action, "disable");
               return action;
           },
           [](MainWindow *window, QAction *) { window->showFileInfo(); },
@@ -687,7 +758,7 @@ const QList<ActionManager::ActionDefinition> &ActionManager::definitions()
               //: Restore from Trash on windows
               action->setText(tr("&Undo Delete"));
 #endif
-              action->setData({ "undodisable" });
+              setPayload(action, "undodisable");
               return action;
           },
           [](MainWindow *window, QAction *) { window->undoDelete(); },
@@ -703,7 +774,7 @@ const QList<ActionManager::ActionDefinition> &ActionManager::definitions()
         { "copy",
           [] {
               auto *action = new QAction(QIcon::fromTheme("edit-copy"), tr("&Copy"));
-              action->setData({ "disable" });
+              setPayload(action, "disable");
               return action;
           },
           [](MainWindow *window, QAction *) { window->copy(); },
@@ -721,7 +792,7 @@ const QList<ActionManager::ActionDefinition> &ActionManager::definitions()
               auto *action = new QAction(
                       QIcon::fromTheme("edit-rename", QIcon::fromTheme("document-properties")),
                       tr("R&ename..."));
-              action->setData({ "disable" });
+              setPayload(action, "disable");
               return action;
           },
           [](MainWindow *window, QAction *) { window->rename(); },
@@ -744,7 +815,7 @@ const QList<ActionManager::ActionDefinition> &ActionManager::definitions()
               //: Move to Trash on windows
               action->setText(tr("&Delete"));
 #endif
-              action->setData({ "disable" });
+              setPayload(action, "disable");
               return action;
           },
           [](MainWindow *window, QAction *) { window->askDeleteFile(false); },
@@ -767,7 +838,7 @@ const QList<ActionManager::ActionDefinition> &ActionManager::definitions()
           [] {
               auto *action =
                       new QAction(QIcon::fromTheme("edit-delete"), tr("Delete Permanently"));
-              action->setData({ "disable" });
+              setPayload(action, "disable");
               return action;
           },
           [](MainWindow *window, QAction *) { window->askDeleteFile(true); },
@@ -785,7 +856,7 @@ const QList<ActionManager::ActionDefinition> &ActionManager::definitions()
         { "firstfile",
           [] {
               auto *action = new QAction(QIcon::fromTheme("go-first"), tr("&First File"));
-              action->setData({ "folderdisable" });
+              setPayload(action, "folderdisable");
               return action;
           },
           [](MainWindow *window, QAction *) {
@@ -797,7 +868,7 @@ const QList<ActionManager::ActionDefinition> &ActionManager::definitions()
         { "previousfile",
           [] {
               auto *action = new QAction(QIcon::fromTheme("go-previous"), tr("Previous Fi&le"));
-              action->setData({ "folderdisable" });
+              setPayload(action, "folderdisable");
               return action;
           },
           [](MainWindow *window, QAction *) {
@@ -809,7 +880,7 @@ const QList<ActionManager::ActionDefinition> &ActionManager::definitions()
         { "nextfile",
           [] {
               auto *action = new QAction(QIcon::fromTheme("go-next"), tr("&Next File"));
-              action->setData({ "folderdisable" });
+              setPayload(action, "folderdisable");
               return action;
           },
           [](MainWindow *window, QAction *) {
@@ -821,7 +892,7 @@ const QList<ActionManager::ActionDefinition> &ActionManager::definitions()
         { "lastfile",
           [] {
               auto *action = new QAction(QIcon::fromTheme("go-last"), tr("Las&t File"));
-              action->setData({ "folderdisable" });
+              setPayload(action, "folderdisable");
               return action;
           },
           [](MainWindow *window, QAction *) {
@@ -834,7 +905,7 @@ const QList<ActionManager::ActionDefinition> &ActionManager::definitions()
           [] {
               auto *action = new QAction(QIcon::fromTheme("media-playlist-shuffle"),
                                          tr("Rando&m File"));
-              action->setData({ "folderdisable" });
+              setPayload(action, "folderdisable");
               return action;
           },
           [](MainWindow *window, QAction *) {
@@ -847,7 +918,7 @@ const QList<ActionManager::ActionDefinition> &ActionManager::definitions()
         { "zoomin",
           [] {
               auto *action = new QAction(QIcon::fromTheme("zoom-in"), tr("Zoom &In"));
-              action->setData({ "disable" });
+              setPayload(action, "disable");
               return action;
           },
           [](MainWindow *window, QAction *) { window->view().zoomIn(); },
@@ -864,7 +935,7 @@ const QList<ActionManager::ActionDefinition> &ActionManager::definitions()
         { "zoomout",
           [] {
               auto *action = new QAction(QIcon::fromTheme("zoom-out"), tr("Zoom &Out"));
-              action->setData({ "disable" });
+              setPayload(action, "disable");
               return action;
           },
           [](MainWindow *window, QAction *) { window->view().zoomOut(); },
@@ -874,17 +945,17 @@ const QList<ActionManager::ActionDefinition> &ActionManager::definitions()
         { "resetzoom",
           [] {
               auto *action = new QAction(QIcon::fromTheme("zoom-fit-best"), tr("Reset &Zoom"));
-              action->setData({ "disable" });
+              setPayload(action, "disable");
               return action;
           },
-          [](MainWindow *window, QAction *) { window->resetZoom(); },
+          [](MainWindow *window, QAction *) { window->view().returnToFit(); },
           true,
           [] { return ShortcutManager::tr("Reset Zoom"); },
           [] { return QStringList(QKeySequence(Qt::CTRL | Qt::Key_0).toString()); } },
         { "originalsize",
           [] {
               auto *action = new QAction(QIcon::fromTheme("zoom-original"), tr("Ori&ginal Size"));
-              action->setData({ "disable" });
+              setPayload(action, "disable");
               return action;
           },
           [](MainWindow *window, QAction *) { window->view().originalSize(); },
@@ -895,12 +966,12 @@ const QList<ActionManager::ActionDefinition> &ActionManager::definitions()
           [] {
               auto *action =
                       new QAction(QIcon::fromTheme("object-rotate-right"), tr("Rotate &Right"));
-              action->setData({ "disable" });
+              setPayload(action, "disable");
               return action;
           },
           [](MainWindow *window, QAction *) {
               window->view().rotateImage(90);
-              window->resetZoom();
+              window->view().returnToFit();
           },
           true,
           [] { return ShortcutManager::tr("Rotate Right"); },
@@ -909,12 +980,12 @@ const QList<ActionManager::ActionDefinition> &ActionManager::definitions()
           [] {
               auto *action =
                       new QAction(QIcon::fromTheme("object-rotate-left"), tr("Rotate &Left"));
-              action->setData({ "disable" });
+              setPayload(action, "disable");
               return action;
           },
           [](MainWindow *window, QAction *) {
               window->view().rotateImage(-90);
-              window->resetZoom();
+              window->view().returnToFit();
           },
           true,
           [] { return ShortcutManager::tr("Rotate Left"); },
@@ -923,12 +994,12 @@ const QList<ActionManager::ActionDefinition> &ActionManager::definitions()
           [] {
               auto *action =
                       new QAction(QIcon::fromTheme("object-flip-horizontal"), tr("&Mirror"));
-              action->setData({ "disable" });
+              setPayload(action, "disable");
               return action;
           },
           [](MainWindow *window, QAction *) {
               window->view().scale(-1, 1);
-              window->resetZoom();
+              window->view().returnToFit();
           },
           true,
           [] { return ShortcutManager::tr("Mirror"); },
@@ -936,12 +1007,12 @@ const QList<ActionManager::ActionDefinition> &ActionManager::definitions()
         { "flip",
           [] {
               auto *action = new QAction(QIcon::fromTheme("object-flip-vertical"), tr("&Flip"));
-              action->setData({ "disable" });
+              setPayload(action, "disable");
               return action;
           },
           [](MainWindow *window, QAction *) {
               window->view().scale(1, -1);
-              window->resetZoom();
+              window->view().returnToFit();
           },
           true,
           [] { return ShortcutManager::tr("Flip"); },
@@ -949,7 +1020,7 @@ const QList<ActionManager::ActionDefinition> &ActionManager::definitions()
         { "toggletitlebar",
           [] {
               auto *action = new QAction(tr("Hide Title&bar"));
-              action->setData({ "windowdisable" });
+              setPayload(action, "windowdisable");
               return action;
           } },
         { "fullscreen",
@@ -957,7 +1028,7 @@ const QList<ActionManager::ActionDefinition> &ActionManager::definitions()
               auto *action =
                       new QAction(QIcon::fromTheme("view-fullscreen"), tr("Enter F&ull Screen"));
               action->setMenuRole(QAction::NoRole);
-              action->setData({ "windowdisable" });
+              setPayload(action, "windowdisable");
               return action;
           },
           [](MainWindow *window, QAction *) { window->toggleFullScreen(); },
@@ -980,12 +1051,13 @@ const QList<ActionManager::ActionDefinition> &ActionManager::definitions()
               action->setChecked(
                       qvApp->getSettingsManager().getBool(SettingsManager::Setting::Frameless));
               action->setMenuRole(QAction::NoRole);
-              action->setData({ "windowdisable" });
+              setPayload(action, "windowdisable");
               return action;
           },
           [](MainWindow *, QAction *triggeredAction) {
               // The frameless setting is global, so there is no need for a relevant window here
-              qvApp->getSettingsManager().setSetting("frameless", triggeredAction->isChecked());
+              qvApp->getSettingsManager().applySettings(
+                      { { SettingsManager::Setting::Frameless, triggeredAction->isChecked() } });
           },
           false,
           [] { return ShortcutManager::tr("Frameless Window"); } },
@@ -995,7 +1067,7 @@ const QList<ActionManager::ActionDefinition> &ActionManager::definitions()
           [] {
               auto *action =
                       new QAction(QIcon::fromTheme("document-save-as"), tr("Save Frame &As..."));
-              action->setData({ "gifdisable" });
+              setPayload(action, "gifdisable");
               return action;
           },
           [](MainWindow *window, QAction *) { window->saveFrameAs(); },
@@ -1005,7 +1077,7 @@ const QList<ActionManager::ActionDefinition> &ActionManager::definitions()
         { "pause",
           [] {
               auto *action = new QAction(QIcon::fromTheme("media-playback-pause"), tr("Pa&use"));
-              action->setData({ "gifdisable" });
+              setPayload(action, "gifdisable");
               return action;
           },
           [](MainWindow *window, QAction *) { window->pause(); },
@@ -1015,7 +1087,7 @@ const QList<ActionManager::ActionDefinition> &ActionManager::definitions()
         { "nextframe",
           [] {
               auto *action = new QAction(QIcon::fromTheme("media-skip-forward"), tr("&Next Frame"));
-              action->setData({ "gifdisable" });
+              setPayload(action, "gifdisable");
               return action;
           },
           [](MainWindow *window, QAction *) { window->nextFrame(); },
@@ -1026,7 +1098,7 @@ const QList<ActionManager::ActionDefinition> &ActionManager::definitions()
           [] {
               auto *action = new QAction(QIcon::fromTheme("media-seek-backward"),
                                          tr("&Decrease Speed"));
-              action->setData({ "gifdisable" });
+              setPayload(action, "gifdisable");
               return action;
           },
           [](MainWindow *window, QAction *) { window->decreaseSpeed(); },
@@ -1037,7 +1109,7 @@ const QList<ActionManager::ActionDefinition> &ActionManager::definitions()
           [] {
               auto *action =
                       new QAction(QIcon::fromTheme("media-playback-start"), tr("&Reset Speed"));
-              action->setData({ "gifdisable" });
+              setPayload(action, "gifdisable");
               return action;
           },
           [](MainWindow *window, QAction *) { window->resetSpeed(); },
@@ -1048,7 +1120,7 @@ const QList<ActionManager::ActionDefinition> &ActionManager::definitions()
           [] {
               auto *action = new QAction(QIcon::fromTheme("media-skip-forward"),
                                          tr("&Increase Speed"));
-              action->setData({ "gifdisable" });
+              setPayload(action, "gifdisable");
               return action;
           },
           [](MainWindow *window, QAction *) { window->increaseSpeed(); },
@@ -1059,7 +1131,7 @@ const QList<ActionManager::ActionDefinition> &ActionManager::definitions()
           [] {
               auto *action = new QAction(QIcon::fromTheme("media-playback-start"),
                                          tr("Start S&lideshow"));
-              action->setData({ "disable" });
+              setPayload(action, "disable");
               return action;
           },
           [](MainWindow *window, QAction *) { window->toggleSlideshow(); },
@@ -1225,13 +1297,14 @@ void ActionManager::initializeActionLibrary()
 {
     for (const auto &definition : definitions()) {
         auto *action = definition.create();
-        auto data = action->data().toStringList();
-        data.prepend(definition.key);
-        action->setData(data);
 
-        if (data.last().contains("disable")) {
+        // A creation lambda tags its action with the rule that decides when it may run
+        const QString tag = payloadOf(action).key;
+        setPayload(action, definition.key, tag.isEmpty() ? QVariant() : QVariant(tag));
+
+        if (tag.contains("disable")) {
             action->setEnabled(false);
-            actionEnableRules.insert(definition.key, enableRuleFromTag(data.last()));
+            actionEnableRules.insert(definition.key, enableRuleFromTag(tag));
         }
 
         actionLibrary.insert(definition.key, action);

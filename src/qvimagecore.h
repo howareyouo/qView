@@ -82,21 +82,24 @@ public:
         QString cacheKey;
     };
 
+    // How the navigation cursor moves through the current folder listing
+    enum class GoToFileMode { constant, first, previous, next, last, random };
+    Q_ENUM(GoToFileMode)
+
     explicit QVImageCore(QObject *parent = nullptr);
 
     void loadFile(const QString &fileName, bool isReloading = false);
-    ReadData readFile(const QString &fileName, const QColorSpace &targetColorSpace,
-                      const FolderScanParams &folderScanParams, QSize previewTargetSize = {},
-                      qint64 fileSize = -1);
+
+    // Moves the cursor and loads the file it lands on. Returns false when the listing has
+    // nowhere to go in that direction and looping is off, so callers can stop what is
+    // driving the navigation.
+    bool goToFile(GoToFileMode mode, int index = 0);
+
     void loadPixmap(const ReadData &readData);
     void closeImage();
     void updateFolderInfo(QString dirPath = QString());
     void updateFolderInfoAsync(QString dirPath = QString());
     void requestCaching(const QColorSpace &targetColorSpace);
-    void requestCachingFile(const QString &filePath, const QColorSpace &targetColorSpace);
-    void addToCache(const ReadData &readImageAndFileInfo);
-    static QString getPixmapCacheKey(const QString &absoluteFilePath, const qint64 &fileSize,
-                                     const QColorSpace &targetColorSpace);
     QColorSpace getTargetColorSpace() const;
     QColorSpace detectDisplayColorSpace() const;
 
@@ -157,6 +160,14 @@ private:
     FolderScanSettings currentFolderScanSettings() const;
 
     FolderScanParams makeFolderScanParams(const QString &dirPath) const;
+
+    ReadData readFile(const QString &fileName, const QColorSpace &targetColorSpace,
+                      const FolderScanParams &folderScanParams, QSize previewTargetSize = {},
+                      qint64 fileSize = -1);
+    static QString getPixmapCacheKey(const QString &absoluteFilePath, const qint64 &fileSize,
+                                     const QColorSpace &targetColorSpace);
+    void addToCache(const ReadData &readImageAndFileInfo);
+    void requestCachingFile(const QString &filePath, const QColorSpace &targetColorSpace);
 
     void startFullDecode(const QString &filePath, const QColorSpace &targetColorSpace);
 

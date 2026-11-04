@@ -2,6 +2,7 @@
 #define SETTINGSMANAGER_H
 
 #include <QVariant>
+#include <QMap>
 #include <QVector>
 #include <QDir>
 
@@ -127,7 +128,9 @@ public:
 
     void loadSettings();
 
-    void setSetting(const QString &key, const QVariant &value);
+    // Writes the given settings, then refreshes the cache and notifies everyone in one call, so a
+    // caller never has to know the storage group or remember to reload
+    void applySettings(const QMap<Setting, QVariant> &values);
 
     bool getBool(Setting setting, bool defaults = false) const;
     int getInt(Setting setting, bool defaults = false) const;
@@ -136,16 +139,17 @@ public:
     // Returns a reference into the cache, so reading a setting does not copy the variant
     const QVariant &getSetting(Setting setting, bool defaults = false) const;
 
-    // Direct enum-based access to setting data
-    const SettingData &getSettingData(Setting setting) const;
-
-    const QString &getSettingKey(Setting setting);
-
 signals:
     void settingsUpdated();
 
 private:
     void initializeSettingDataCache();
+
+    // Direct enum-based access to setting data
+    const SettingData &getSettingData(Setting setting) const;
+
+    const QString &getSettingKey(Setting setting);
+
     QVector<SettingData> settingDataCache;
 };
 
