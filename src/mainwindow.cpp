@@ -7,23 +7,16 @@
 
 #include <QFileDialog>
 #include <QString>
-#include <QGraphicsPixmapItem>
 #include <QPixmap>
 #include <QClipboard>
 #include <QCoreApplication>
-#include <QFileSystemWatcher>
 #include <QProcess>
 #include <QDesktopServices>
 #include <QContextMenuEvent>
 #include <QMovie>
-#include <QImageWriter>
 #include <QSettings>
-#include <QStyle>
 #include <QIcon>
-#include <QMimeDatabase>
-#include <QScreen>
 #include <QElapsedTimer>
-#include <QCursor>
 #include <QFutureWatcher>
 #include <QtConcurrent/QtConcurrentRun>
 #include <QMenu>
@@ -51,11 +44,9 @@ MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent), ui(new Ui::MainWi
     centralWidget()->setAttribute(Qt::WA_ContentsMarginsRespectsSafeArea, false);
 #endif
 
-    // Initialize variables
     storedWindowState = Qt::WindowNoState;
     openWithNeedsPopulate = true;
 
-    // Initialize graphicsviewkDefaultBufferAlignment
     graphicsView = new QVGraphicsView(this);
     centralWidget()->layout()->addWidget(graphicsView);
 
@@ -64,30 +55,24 @@ MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent), ui(new Ui::MainWi
     ui->fullscreenLabel->hide();
     ui->fullscreenLabel->setAttribute(Qt::WA_TransparentForMouseEvents);
 
-    // Connect graphicsview signals
     connect(graphicsView, &QVGraphicsView::fileChanged, this, &MainWindow::fileChanged);
     connect(graphicsView, &QVGraphicsView::cancelSlideshow, this, &MainWindow::cancelSlideshow);
 
-    // Initialize escape shortcut
     escShortcut = new QShortcut(Qt::Key_Escape, this);
     connect(escShortcut, &QShortcut::activated, this, [this]() {
         if (windowState().testFlag(Qt::WindowFullScreen))
             toggleFullScreen();
     });
 
-    // Enable drag&dropping
     setAcceptDrops(true);
 
-    // Make info dialog object
     info = new QVInfoDialog(this);
 
-    // Timer for slideshow
     connect(&slideshowTimer, &QTimer::timeout, this, &MainWindow::slideshowAction);
 
     QVProfile::record("startup: window setup", startupTimer.nsecsElapsed());
     startupTimer.restart();
 
-    // Context menu
     auto &actionManager = qvApp->getActionManager();
 
     {
@@ -215,8 +200,9 @@ void MainWindow::showEvent(QShowEvent *event)
     // functionality even if we enable this after. Presumably restoreGeometry saves data for
     // further processing after the window is shown, hence the timer here to queue this on the
     // event loop and run after that processing happens.
-    QTimer::singleShot(
-            0, this, [this]() { QVPlatformFunctions::setFullSizeContentView(windowHandle(), true); });
+    QTimer::singleShot(0, this, [this]() {
+        QVPlatformFunctions::setFullSizeContentView(windowHandle(), true);
+    });
 
     QMainWindow::showEvent(event);
 }
@@ -245,9 +231,9 @@ void MainWindow::closeEvent(QCloseEvent *event)
 void MainWindow::changeEvent(QEvent *event)
 {
     if (event->type() == QEvent::WindowStateChange) {
-        const auto *changeEvent = static_cast<QWindowStateChangeEvent *>(event);
+        const auto *stateChangeEvent = static_cast<QWindowStateChangeEvent *>(event);
         if (windowState().testFlag(Qt::WindowFullScreen)
-            != changeEvent->oldState().testFlag(Qt::WindowFullScreen))
+            != stateChangeEvent->oldState().testFlag(Qt::WindowFullScreen))
             fullscreenChanged();
     }
 
@@ -338,12 +324,13 @@ void MainWindow::paintEvent(QPaintEvent *event)
 
     // If there's an error message, draw it centered inside the unobscured area of the viewport.
     const QRect unobscuredViewportRect = rect().adjusted(0, unobscuredViewportY, 0, 0);
-    if (getCurrentFileDetails().errorData.hasError && unobscuredViewportRect.isValid()) {
-        const QVImageCore::ErrorData &errorData = getCurrentFileDetails().errorData;
+    const QVImageCore::FileDetails &fileDetails = getCurrentFileDetails();
+    if (fileDetails.errorData.hasError && unobscuredViewportRect.isValid()) {
+        const QVImageCore::ErrorData &errorData = fileDetails.errorData;
         const QString errorMessage =
                 tr("Error occurred opening\n%3\n%2 (Error %1)")
                         .arg(QString::number(errorData.errorNum), errorData.errorString,
-                             getCurrentFileDetails().fileInfo.fileName());
+                             fileDetails.fileInfo.fileName());
         painter.setFont(font());
         painter.setPen(QVApplication::getPerceivedBrightness(backgroundColor) > 0.5 ? Qt::black
                                                                                     : Qt::white);
@@ -358,9 +345,14 @@ void MainWindow::fullscreenChanged()
     const QString text = isFullscreen ? tr("Exit F&ull Screen") : tr("Enter F&ull Screen");
     const QIcon icon = QIcon::fromTheme(isFullscreen ? "view-restore" : "view-fullscreen");
     qvApp->getActionManager().setClonePresentation("fullscreen", text, icon, this);
-    ui->fullscreenLabel->setVisible(
-            isFullscreen
-            && qvApp->getSettingsManager().getBool(SettingsManager::Setting::FullScreenDetails));
+    refreshFullscreenLabel();
+}
+
+void MainWindow::refreshFullscreenLabel()
+{
+    const bool showLabel = windowState().testFlag(Qt::WindowFullScreen)
+            && qvApp->getSettingsManager().getBool(SettingsManager::Setting::FullScreenDetails);
+    ui->fullscreenLabel->setVisible(showLabel);
     updateFullscreenLabelGeometry();
 }
 
@@ -389,7 +381,6 @@ void MainWindow::settingsUpdated()
         customBackgroundColor.setAlpha(qRound(bgColorAlpha * 255.0 / 100.0));
     }
 
-    // menubarenabled
     bool menuBarEnabled = settingsManager.getBool(SettingsManager::Setting::MenuBarEnabled);
 #ifdef Q_OS_MACOS
     // Menu bar is effectively always enabled on macOS
@@ -402,30 +393,23 @@ void MainWindow::settingsUpdated()
         menuBar()->setVisible(false);
     }
 
-    // frameless
     updateFrameless();
     const bool frameless = settingsManager.getBool(SettingsManager::Setting::Frameless);
     qvApp->getActionManager().forEachInstanceOfAction(
             "frameless", [frameless](QAction *action) { action->setChecked(frameless); });
 
-    // titlebaralwaysdark/hidetitlebar
-    QVPlatformFunctions::setVibrancy(settingsManager.getBool(SettingsManager::Setting::HideTitlebar),
-                                     settingsManager.getBool(SettingsManager::Setting::ForceDarkMode),
-                                     windowHandle());
+    QVPlatformFunctions::setVibrancy(
+            settingsManager.getBool(SettingsManager::Setting::HideTitlebar),
+            settingsManager.getBool(SettingsManager::Setting::ForceDarkMode), windowHandle());
 #ifdef COCOA_LOADED
-    // quitonlastwindow
     qvApp->setQuitOnLastWindowClosed(
             settingsManager.getBool(SettingsManager::Setting::QuitOnLastWindow));
 #endif
 
-    // slideshow timer
     slideshowTimer.setInterval(static_cast<int>(
             settingsManager.getDouble(SettingsManager::Setting::SlideshowTimer) * 1000));
 
-    ui->fullscreenLabel->setVisible(
-            settingsManager.getBool(SettingsManager::Setting::FullScreenDetails)
-            && windowState().testFlag(Qt::WindowFullScreen));
-    updateFullscreenLabelGeometry();
+    refreshFullscreenLabel();
 
     // repaint in case background color changed
     update();
@@ -514,11 +498,12 @@ void MainWindow::disableActions()
     QV_PROFILE_SCOPE("open: action states");
 
     const auto &actionManager = qvApp->getActionManager();
+    const QVImageCore::FileDetails &fileDetails = getCurrentFileDetails();
 
     ActionManager::EnableState state;
-    state.pixmapLoaded = getCurrentFileDetails().isPixmapLoaded;
-    state.movieLoaded = getCurrentFileDetails().isMovieLoaded;
-    state.folderLoaded = !getCurrentFileDetails().folderFileInfoList.isEmpty();
+    state.pixmapLoaded = fileDetails.isPixmapLoaded;
+    state.movieLoaded = fileDetails.isMovieLoaded;
+    state.folderLoaded = !fileDetails.folderFileInfoList.isEmpty();
     state.undoAvailable = fileOperations.canUndo();
     actionManager.applyEnableState(state, this);
 
@@ -550,10 +535,11 @@ void MainWindow::openWithMenuAboutToShow()
     requestPopulateOpenWithMenu();
 }
 
-void MainWindow::populateOpenWithMenu(const QList<OpenWith::OpenWithItem> openWithItems)
+void MainWindow::populateOpenWithMenu(QList<OpenWith::OpenWithItem> openWithItems)
 {
-    qvApp->getActionManager().updateIndexedCloneActions(
-            "openwith", qvApp->getActionManager().getOpenWithMaxLength(), openWithItems.length(),
+    auto &actionManager = qvApp->getActionManager();
+    actionManager.updateIndexedCloneActions(
+            "openwith", actionManager.getOpenWithMaxLength(), openWithItems.length(),
             [&openWithItems](int i, QAction *action) {
                 const auto openWithItem = openWithItems.value(i);
                 action->setText(openWithItem.name);
@@ -562,58 +548,55 @@ void MainWindow::populateOpenWithMenu(const QList<OpenWith::OpenWithItem> openWi
                 else
                     action->setIcon(openWithItem.icon);
                 const ActionManager::Payload payload = ActionManager::payloadOf(action);
-                ActionManager::setPayload(action, payload.key,
-                                          QVariant::fromValue(openWithItem));
+                ActionManager::setPayload(action, payload.key, QVariant::fromValue(openWithItem));
             });
 }
 
 void MainWindow::refreshProperties()
 {
-    int value4;
-    if (getCurrentFileDetails().isMovieLoaded)
-        value4 = graphicsView->getLoadedMovie().frameCount();
-    else
-        value4 = 0;
-    info->setInfo(getCurrentFileDetails().fileInfo, getCurrentFileDetails().baseImageSize.width(),
-                  getCurrentFileDetails().baseImageSize.height(), value4);
+    const QVImageCore::FileDetails &fileDetails = getCurrentFileDetails();
+    const int frameCount =
+            fileDetails.isMovieLoaded ? graphicsView->getLoadedMovie().frameCount() : 0;
+    info->setInfo(fileDetails.fileInfo, fileDetails.baseImageSize.width(),
+                  fileDetails.baseImageSize.height(), frameCount);
 }
 
 void MainWindow::updateWindowTitle()
 {
-    QString newString = "qView";
-    if (getCurrentFileDetails().fileInfo.isFile()) {
-        switch (qvApp->getSettingsManager().getInt(SettingsManager::Setting::TitleBarMode)) {
-        case SettingsManager::TitleBarFileName: {
-            newString = getCurrentFileDetails().fileInfo.fileName();
+    const QVImageCore::FileDetails &fileDetails = getCurrentFileDetails();
+    const SettingsManager &settingsManager = qvApp->getSettingsManager();
+
+    QString title = "qView";
+    if (fileDetails.fileInfo.isFile()) {
+        const int titleBarMode = settingsManager.getInt(SettingsManager::Setting::TitleBarMode);
+        switch (titleBarMode) {
+        case SettingsManager::TitleBarFileName:
+            title = fileDetails.fileInfo.fileName();
             break;
-        }
         case SettingsManager::TitleBarIndexAndFileName:
-        case SettingsManager::TitleBarDetails: {
-            newString = QString::number(getCurrentFileDetails().loadedIndexInFolder + 1);
-            newString += "/" + QString::number(getCurrentFileDetails().folderFileInfoList.count());
-            newString += " - " + getCurrentFileDetails().fileInfo.fileName();
+        case SettingsManager::TitleBarDetails:
+            title = QString::number(fileDetails.loadedIndexInFolder + 1) + "/"
+                    + QString::number(fileDetails.folderFileInfoList.count()) + " - "
+                    + fileDetails.fileInfo.fileName();
 
             // Details mode adds image details and a suffix
-            if (qvApp->getSettingsManager().getInt(SettingsManager::Setting::TitleBarMode)
-                == SettingsManager::TitleBarIndexAndFileName)
+            if (titleBarMode == SettingsManager::TitleBarIndexAndFileName)
                 break;
 
-            if (!getCurrentFileDetails().errorData.hasError) {
-                newString += " - " + QString::number(getCurrentFileDetails().baseImageSize.width());
-                newString += "x" + QString::number(getCurrentFileDetails().baseImageSize.height());
-                newString +=
-                        " - " + QVInfoDialog::formatBytes(getCurrentFileDetails().fileInfo.size());
+            if (!fileDetails.errorData.hasError) {
+                title += " - " + QString::number(fileDetails.baseImageSize.width()) + "x"
+                        + QString::number(fileDetails.baseImageSize.height()) + " - "
+                        + QVInfoDialog::formatBytes(fileDetails.fileInfo.size());
             }
-            newString += " - qView";
+            title += " - qView";
             break;
-        }
         }
     }
 
-    setWindowTitle(newString);
+    setWindowTitle(title);
 
     // Update fullscreen label to titlebar text as well
-    ui->fullscreenLabel->setText(newString);
+    ui->fullscreenLabel->setText(title);
 }
 
 void MainWindow::updateWindowFilePath()
@@ -719,9 +702,8 @@ void MainWindow::rename()
     auto *renameDialog = new QVRenameDialog(this, getCurrentFileDetails().fileInfo);
     connect(renameDialog, &QVRenameDialog::newFileToOpen, this, &MainWindow::openFile);
     connect(renameDialog, &QVRenameDialog::readyToRenameFile, this, [this]() {
-        if (auto device = graphicsView->getLoadedMovie().device()) {
+        if (auto *device = graphicsView->getLoadedMovie().device())
             device->close();
-        }
     });
 
     renameDialog->open();
@@ -732,9 +714,9 @@ void MainWindow::saveFrameAs()
     if (!getCurrentFileDetails().isMovieLoaded)
         return;
 
-    if (graphicsView->getLoadedMovie().state() == QMovie::Running) {
+    if (graphicsView->getLoadedMovie().state() == QMovie::Running)
         pause();
-    }
+
     QFileDialog *saveDialog = new QFileDialog(this, tr("Save Frame As..."));
     saveDialog->setDirectory(qvApp->getLastFileDialogDir());
     saveDialog->setNameFilters(qvApp->getNameFilterList());
@@ -744,7 +726,7 @@ void MainWindow::saveFrameAs()
     saveDialog->setDefaultSuffix("png");
     saveDialog->setAcceptMode(QFileDialog::AcceptSave);
     saveDialog->open();
-    connect(saveDialog, &QFileDialog::fileSelected, this, [=](const QString &fileName) {
+    connect(saveDialog, &QFileDialog::fileSelected, this, [this](const QString &fileName) {
         graphicsView->originalSize();
         for (int i = 0; i < graphicsView->getLoadedMovie().frameCount(); i++)
             nextFrame();
@@ -762,8 +744,8 @@ void MainWindow::pause()
     const bool isRunning = graphicsView->getLoadedMovie().state() == QMovie::Running;
     graphicsView->setPaused(isRunning);
     const QString text = isRunning ? tr("Res&ume") : tr("Pause");
-    const QIcon icon = QIcon::fromTheme(isRunning ? "media-playback-start"
-                                                  : "media-playback-pause");
+    const QIcon icon =
+            QIcon::fromTheme(isRunning ? "media-playback-start" : "media-playback-pause");
     qvApp->getActionManager().setClonePresentation("pause", text, icon, this);
 }
 
@@ -829,9 +811,9 @@ void MainWindow::increaseSpeed()
 
 void MainWindow::toggleFullScreen()
 {
-    // Note: This is only triggered by the menu action, so the logic here should be kept to a
-    // minimum. Anything that needs to run even if the window manager initiated the change should be
-    // triggered by QEvent::WindowStateChange.
+    // Note: This is only reached from the window's own input handling, never from the window
+    // manager, so the logic here should be kept to a minimum. Anything that needs to run even if
+    // the window manager initiated the change should be triggered by QEvent::WindowStateChange.
 
     // Disable updates during window state change to resolve visual glitches on macOS if the
     // titlebar is hidden
@@ -841,7 +823,6 @@ void MainWindow::toggleFullScreen()
         setWindowState(storedWindowState);
     } else {
         storedWindowState = windowState();
-
         showFullScreen();
     }
 

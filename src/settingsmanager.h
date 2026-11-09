@@ -1,6 +1,7 @@
 #ifndef SETTINGSMANAGER_H
 #define SETTINGSMANAGER_H
 
+#include <QObject>
 #include <QVariant>
 #include <QMap>
 #include <QVector>
@@ -143,6 +144,7 @@ signals:
     void settingsUpdated();
 
 private:
+    // Must run before any setting is read or written: fills both caches from settingDefinitions
     void initializeSettingDataCache();
 
     // Direct enum-based access to setting data

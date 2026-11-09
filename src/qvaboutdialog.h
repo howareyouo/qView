@@ -18,7 +18,6 @@ public:
 
     void updateText();
 
-    double getLatestVersionNum() const;
     void setLatestVersionNum(double value);
 
 private:

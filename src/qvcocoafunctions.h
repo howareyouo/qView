@@ -25,8 +25,6 @@ public:
 
     static bool startSystemMove(QWidget *widget);
 
-    static void performWindowDrag(QWidget *widget);
-
     static void closeWindow(QWindow *window);
 
     static void setWindowMenu(QMenu *menu);
@@ -36,8 +34,6 @@ public:
     static void setDockRecents(const QStringList &recentPathsList);
 
     static QList<OpenWith::OpenWithItem> getOpenWithItems(const QString &filePath);
-
-    static QString deleteFile(const QString &filePath);
 
     static QByteArray getIccProfileForWindow(const QWindow *window);
 };

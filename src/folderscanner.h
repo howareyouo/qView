@@ -54,12 +54,12 @@ struct FolderScanInfo
     unsigned randomSortSeed = 0;
 };
 
-QList<CompatibleFile> getCompatibleFilesForDir(const QString &dirPath, int sortMode, bool skipHidden,
-                                               bool allowMimeContentDetection);
+QList<CompatibleFile> getCompatibleFilesForDir(const QString &dirPath, int sortMode,
+                                               bool skipHidden, bool allowMimeContentDetection);
 
 FolderScanInfo scanFolder(const FolderScanParams &params);
 
 int findLoadedIndexInFolder(const QFileInfo &fileInfo, const QList<CompatibleFile> &fileList);
-}
+} // namespace FolderScanner
 
 #endif // FOLDERSCANNER_H

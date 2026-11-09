@@ -15,27 +15,21 @@ class QVInfoDialog : public QDialog
 
 public:
     explicit QVInfoDialog(QWidget *parent = nullptr);
-    ~QVInfoDialog();
+    ~QVInfoDialog() override;
 
-    void setInfo(const QFileInfo &value, const int &value2, const int &value3, const int &value4);
+    void setInfo(const QFileInfo &fileInfo, int imageWidth, int imageHeight, int frames);
 
     void updateInfo();
+
+    static QString formatBytes(qint64 bytes) { return QLocale().formattedDataSize(bytes); }
 
 private:
     Ui::QVInfoDialog *ui;
 
     QFileInfo selectedFileInfo;
-    int width;
-    int height;
-
-    int frameCount;
-
-public:
-    static QString formatBytes(qint64 bytes)
-    {
-        QLocale locale;
-        return locale.formattedDataSize(bytes);
-    }
+    int width = 0;
+    int height = 0;
+    int frameCount = 0;
 };
 
 #endif // QVINFODIALOG_H

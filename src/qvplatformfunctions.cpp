@@ -7,7 +7,6 @@
 #include <QContextMenuEvent>
 #include <QFile>
 #include <QMenu>
-#include <QUrl>
 #include <QWidget>
 
 void QVPlatformFunctions::showContextMenu(QMenu *menu, QContextMenuEvent *event, QWindow *window)

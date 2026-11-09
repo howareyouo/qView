@@ -16,9 +16,6 @@ class QVGraphicsView : public QGraphicsView
 public:
     QVGraphicsView(QWidget *parent = nullptr);
 
-    enum class ScaleMode { resetScale, zoom };
-    Q_ENUM(ScaleMode)
-
     // The navigation cursor belongs to the folder listing it moves through
     using GoToFileMode = QVImageCore::GoToFileMode;
 
@@ -118,7 +115,7 @@ protected:
     void centerOn(const QGraphicsItem *item);
 
 private slots:
-    void animatedFrameChanged(QRect rect);
+    void animatedFrameChanged(QRect);
 
     void postLoad();
 
@@ -130,7 +127,6 @@ private:
     // What a new session needs to put the zoom back: the shape of the image it belongs to and how
     // far past the fit scale it was zoomed, written as "16:9,1.2x"
     QString getZoomRecord() const;
-    bool getIsOriginalSize() const { return isOriginalSize; }
 
     // Puts the zoom a previous session ended at back on an image that has just been loaded. Has to
     // run after the window has been given the new image's size, since that refits the image.
@@ -158,7 +154,15 @@ private:
 
     void setOrientedTransform(bool mirrored, bool flipped, const QTransform &base);
 
+    // Shows a pixmap at a new resolution, giving the view back the mirroring and flipping that the
+    // base transform it is shown with does not carry
+    void setPixmapKeepingOrientation(const QPixmap &pixmap, const QTransform &base);
+
     bool isAtFit() const;
+
+    // Whether a zoom step may move the window at all: the settings have to allow it, and what part
+    // of a step the window can take is worked out per step
+    bool canResizeWindowForZoom() const;
 
     // Both work out the part of a zoom step the window can take and write the size it would move
     // to, without resizing anything: a step that ends past the zoom limits is rejected before the
@@ -170,6 +174,10 @@ private:
     void applyZoomWindowResize(const QSize &targetSize);
 
     bool isWindowMovable() const;
+
+    // The edge of a frameless window under a point of the viewport, standing in for the native
+    // resize border such a window does not have
+    Qt::Edges framelessResizeEdgesAt(const QPoint &viewportPos) const;
 
     bool hasPannableArea() const;
 
@@ -217,7 +225,6 @@ private:
     QVImageCore imageCore{ this };
 
     QTimer *expensiveScaleTimerNew;
-    QPointF centerPoint;
     Qt::MouseButton mousePressButton;
     Qt::KeyboardModifiers mousePressModifiers;
     QPoint mousePressPosition;

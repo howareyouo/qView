@@ -12,8 +12,9 @@
 // qView.ini in that same directory instead of the system registry.
 static void detectPortableMode(const QString &applicationArg0)
 {
-    const QFileInfo portableMarker(
-            QFileInfo(applicationArg0).absolutePath() + QStringLiteral("/portable"));
+    const QFileInfo applicationFileInfo(applicationArg0);
+    const QFileInfo portableMarker(applicationFileInfo.absolutePath()
+                                   + QStringLiteral("/portable"));
     if (!portableMarker.isFile())
         return;
 
@@ -33,34 +34,37 @@ int main(int argc, char *argv[])
     QElapsedTimer startupTimer;
     startupTimer.start();
 
+    // Records the phase that just finished and starts the clock for the next one
+    const auto recordStartupPhase = [&startupTimer](const char *phase) {
+        QVProfile::record(phase, startupTimer.nsecsElapsed());
+        startupTimer.restart();
+    };
+
     QCoreApplication::setOrganizationName("qView");
     QCoreApplication::setApplicationName("qView");
     QCoreApplication::setApplicationVersion(QString::number(VERSION));
     detectPortableMode(argv[0]);
-    QVProfile::record("startup: pre application init", startupTimer.nsecsElapsed());
-    startupTimer.restart();
+    recordStartupPhase("startup: pre application init");
 
     QVApplication app(argc, argv);
     // Covers everything in the QVApplication constructor, including the QApplication base
     // constructor, the platform plugin and the member managers
-    QVProfile::record("startup: application construction", startupTimer.nsecsElapsed());
-    startupTimer.restart();
+    recordStartupPhase("startup: application construction");
 
     QCommandLineParser parser;
     parser.addHelpOption();
     parser.addVersionOption();
     parser.addPositionalArgument(QObject::tr("file"), QObject::tr("The file to open."));
     parser.process(app);
-    QVProfile::record("startup: command line parse", startupTimer.nsecsElapsed());
-    startupTimer.restart();
+    recordStartupPhase("startup: command line parse");
 
     auto *window = QVApplication::newWindow();
     // Also covers show() and raise(), so the first native window creation is included
-    QVProfile::record("startup: new window", startupTimer.nsecsElapsed());
-    startupTimer.restart();
+    recordStartupPhase("startup: new window");
 
-    if (!parser.positionalArguments().isEmpty())
-        QVApplication::openFile(window, parser.positionalArguments().constFirst(), true);
+    const auto positionalArgs = parser.positionalArguments();
+    if (!positionalArgs.isEmpty())
+        QVApplication::openFile(window, positionalArgs.constFirst(), true);
     QVProfile::record("startup: open file request", startupTimer.nsecsElapsed());
 
     QVProfile::record("startup: until event loop", QVProfile::sinceStartup());

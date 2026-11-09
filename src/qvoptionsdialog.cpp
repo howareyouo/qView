@@ -8,19 +8,15 @@
 #include <QSettings>
 #include <QKeySequence>
 
-#include <QDebug>
-
 QVOptionsDialog::QVOptionsDialog(QWidget *parent) : QDialog(parent), ui(new Ui::QVOptionsDialog)
 {
     ui->setupUi(this);
 
     // Set platform-specific modifier text for Ctrl drag checkbox
-    QString ctrlString = QKeySequence(Qt::ControlModifier).toString().remove('+');
+    const QString ctrlString = QKeySequence(Qt::ControlModifier).toString().remove('+');
     ui->ctrlDragCheckbox->setText(ui->ctrlDragCheckbox->text().arg(ctrlString));
     ui->ctrlDragCheckbox->setToolTip(ui->ctrlDragCheckbox->toolTip().arg(ctrlString));
     ui->framelessCheckbox->setToolTip(ui->framelessCheckbox->toolTip().arg(ctrlString));
-
-    languageRestartMessageShown = false;
 
     setAttribute(Qt::WA_DeleteOnClose);
     setWindowFlags(windowFlags() & (~Qt::WindowContextHelpButtonHint | Qt::CustomizeWindowHint));
@@ -107,17 +103,13 @@ void QVOptionsDialog::done(int r)
 
 void QVOptionsDialog::modifySetting(SettingsManager::Setting setting, QVariant value)
 {
-    transientSettings.insert(static_cast<int>(setting), value);
+    transientSettings.insert(setting, value);
     updateButtonBox();
 }
 
 void QVOptionsDialog::saveSettings()
 {
-    QMap<SettingsManager::Setting, QVariant> changedSettings;
-    for (auto it = transientSettings.constBegin(); it != transientSettings.constEnd(); ++it) {
-        changedSettings.insert(static_cast<SettingsManager::Setting>(it.key()), it.value());
-    }
-    qvApp->getSettingsManager().applySettings(changedSettings);
+    qvApp->getSettingsManager().applySettings(transientSettings);
 
     QSettings settings;
     settings.beginGroup("shortcuts");
@@ -136,124 +128,91 @@ void QVOptionsDialog::syncSettings(bool defaults, bool makeConnections)
     auto &settingsManager = qvApp->getSettingsManager();
     settingsManager.loadSettings();
 
-    // bgcolorenabled
+    // Window settings
     syncCheckbox(ui->bgColorCheckbox, SettingsManager::Setting::BgColorEnabled, defaults,
                  makeConnections);
-    // bgcolor
     const auto bgColor = SettingsManager::Setting::BgColor;
     ui->bgColorButton->setText(settingsManager.getString(bgColor, defaults));
-    transientSettings.insert(static_cast<int>(bgColor), ui->bgColorButton->text());
+    transientSettings.insert(bgColor, ui->bgColorButton->text());
     updateBgColorButton();
     connect(ui->bgColorButton, &QPushButton::clicked, this, &QVOptionsDialog::bgColorButtonClicked);
-    // bgcoloralpha
     syncSpinBox(ui->bgColorAlphaSpinBox, SettingsManager::Setting::BgColorAlpha, defaults,
                 makeConnections);
     setBgColorControlsEnabled(ui->bgColorCheckbox->isChecked());
-    // titlebarmode
     syncRadioButtons({ ui->titlebarRadioButton0, ui->titlebarRadioButton1, ui->titlebarRadioButton2,
                        ui->titlebarRadioButton3 },
                      SettingsManager::Setting::TitleBarMode, defaults, makeConnections);
-    // windowresizemode
     syncComboBox(ui->windowResizeComboBox, SettingsManager::Setting::WindowResizeMode, defaults,
                  makeConnections);
     windowResizeComboBoxCurrentIndexChanged(ui->windowResizeComboBox->currentIndex());
-    // minwindowresizedpercentage
     syncSpinBox(ui->minWindowResizeSpinBox, SettingsManager::Setting::MinWindowResizedPercentage,
                 defaults, makeConnections);
-    // maxwindowresizedperecentage
     syncSpinBox(ui->maxWindowResizeSpinBox, SettingsManager::Setting::MaxWindowResizedPercentage,
                 defaults, makeConnections);
-    // hidetitlebar
     syncCheckbox(ui->hideTitlebarCheckbox, SettingsManager::Setting::HideTitlebar, defaults,
                  makeConnections);
-    // forcedarkmode
     syncCheckbox(ui->forceDarkModeCheckbox, SettingsManager::Setting::ForceDarkMode, defaults,
                  makeConnections);
-    // quitonlastwindow
     syncCheckbox(ui->quitOnLastWindowCheckbox, SettingsManager::Setting::QuitOnLastWindow, defaults,
                  makeConnections);
-    // ctrldragwindow
     syncCheckbox(ui->ctrlDragCheckbox, SettingsManager::Setting::CtrlDragWindow, defaults,
                  makeConnections);
-    // frameless
     syncCheckbox(ui->framelessCheckbox, SettingsManager::Setting::Frameless, defaults,
                  makeConnections);
-    // menubarenabled
     syncCheckbox(ui->menubarCheckbox, SettingsManager::Setting::MenuBarEnabled, defaults,
                  makeConnections);
-    // fullscreendetails
     syncCheckbox(ui->detailsInFullscreen, SettingsManager::Setting::FullScreenDetails, defaults,
                  makeConnections);
-    // filteringenabled
+
+    // Image settings
     syncCheckbox(ui->filteringCheckbox, SettingsManager::Setting::FilteringEnabled, defaults,
                  makeConnections);
-    // scalingenabled
     syncCheckbox(ui->scalingCheckbox, SettingsManager::Setting::ScalingEnabled, defaults,
                  makeConnections);
     ui->scalingTwoCheckbox->setEnabled(ui->scalingCheckbox->isChecked());
-    // scalingtwoenabled
     syncCheckbox(ui->scalingTwoCheckbox, SettingsManager::Setting::ScalingTwoEnabled, defaults,
                  makeConnections);
-    // scalefactor
     syncSpinBox(ui->scaleFactorSpinBox, SettingsManager::Setting::ScaleFactor, defaults,
                 makeConnections);
-    // scrollzoom
     syncComboBox(ui->scrollZoomsComboBox, SettingsManager::Setting::ScrollZoom, defaults,
                  makeConnections);
-    // fractionalzoom
     syncCheckbox(ui->fractionalZoomCheckbox, SettingsManager::Setting::FractionalZoom, defaults,
                  makeConnections);
-    // cursorzoom
     syncCheckbox(ui->cursorZoomCheckbox, SettingsManager::Setting::CursorZoom, defaults,
                  makeConnections);
-    // rememberzoom
     syncCheckbox(ui->rememberZoomCheckbox, SettingsManager::Setting::RememberZoom, defaults,
                  makeConnections);
-    // cropmode
     syncComboBox(ui->cropModeComboBox, SettingsManager::Setting::CropMode, defaults,
                  makeConnections);
-    // pastactualsizeenabled
     syncCheckbox(ui->pastActualSizeCheckbox, SettingsManager::Setting::PastActualSizeEnabled,
                  defaults, makeConnections);
-    // colorspaceconversion
     syncComboBox(ui->colorSpaceConversionComboBox, SettingsManager::Setting::ColorSpaceConversion,
                  defaults, makeConnections);
-    // language
+
+    // Miscellaneous settings
     syncComboBoxData(ui->langComboBox, SettingsManager::Setting::Language, defaults,
                      makeConnections);
-    // sortmode
     syncComboBox(ui->sortComboBox, SettingsManager::Setting::SortMode, defaults, makeConnections);
-    // sortdescending
     syncRadioButtons({ ui->descendingRadioButton0, ui->descendingRadioButton1 },
                      SettingsManager::Setting::SortDescending, defaults, makeConnections);
-    // preloadingmode
     syncComboBox(ui->preloadingComboBox, SettingsManager::Setting::PreloadingMode, defaults,
                  makeConnections);
-    // loopfolders
     syncCheckbox(ui->loopFoldersCheckbox, SettingsManager::Setting::LoopFoldersEnabled, defaults,
                  makeConnections);
-    // slideshowreversed
     syncComboBox(ui->slideshowDirectionComboBox, SettingsManager::Setting::SlideshowReversed,
                  defaults, makeConnections);
-    // slideshowtimer
     syncDoubleSpinBox(ui->slideshowTimerSpinBox, SettingsManager::Setting::SlideshowTimer, defaults,
                       makeConnections);
-    // afterdelete
     syncComboBox(ui->afterDeletionComboBox, SettingsManager::Setting::AfterDelete, defaults,
                  makeConnections);
-    // askdelete
     syncCheckbox(ui->askDeleteCheckbox, SettingsManager::Setting::AskDelete, defaults,
                  makeConnections);
-    // allowmimecontentdetection
     syncCheckbox(ui->mimeContentDetectionCheckbox,
                  SettingsManager::Setting::AllowMimeContentDetection, defaults, makeConnections);
-    // saverecents
     syncCheckbox(ui->saveRecentsCheckbox, SettingsManager::Setting::SaveRecents, defaults,
                  makeConnections);
-    // updatenotifications
     syncCheckbox(ui->updateCheckbox, SettingsManager::Setting::UpdateNotifications, defaults,
                  makeConnections);
-    // skiphidden
     syncCheckbox(ui->skipHiddenCheckbox, SettingsManager::Setting::SkipHidden, defaults,
                  makeConnections);
 }
@@ -263,7 +222,7 @@ void QVOptionsDialog::syncCheckbox(QCheckBox *checkbox, SettingsManager::Setting
 {
     auto val = qvApp->getSettingsManager().getBool(setting, defaults);
     checkbox->setChecked(val);
-    transientSettings.insert(static_cast<int>(setting), val);
+    transientSettings.insert(setting, val);
 
     if (makeConnection) {
         connect(checkbox, &QCheckBox::stateChanged, this,
@@ -277,7 +236,7 @@ void QVOptionsDialog::syncRadioButtons(QList<QRadioButton *> buttons,
 {
     auto val = qvApp->getSettingsManager().getInt(setting, defaults);
     buttons.value(val)->setChecked(true);
-    transientSettings.insert(static_cast<int>(setting), val);
+    transientSettings.insert(setting, val);
 
     if (makeConnection) {
         for (int i = 0; i < buttons.length(); i++) {
@@ -292,7 +251,7 @@ void QVOptionsDialog::syncComboBox(QComboBox *comboBox, SettingsManager::Setting
 {
     auto val = qvApp->getSettingsManager().getInt(setting, defaults);
     comboBox->setCurrentIndex(val);
-    transientSettings.insert(static_cast<int>(setting), val);
+    transientSettings.insert(setting, val);
 
     if (makeConnection) {
         connect(comboBox, QOverload<int>::of(&QComboBox::currentIndexChanged), this,
@@ -305,14 +264,11 @@ void QVOptionsDialog::syncComboBoxData(QComboBox *comboBox, SettingsManager::Set
 {
     auto val = qvApp->getSettingsManager().getString(setting, defaults);
     comboBox->setCurrentIndex(comboBox->findData(val));
-    transientSettings.insert(static_cast<int>(setting), val);
+    transientSettings.insert(setting, val);
 
     if (makeConnection) {
         connect(comboBox, QOverload<int>::of(&QComboBox::currentIndexChanged), this,
-                [this, setting, comboBox](int index) {
-                    Q_UNUSED(index)
-                    modifySetting(setting, comboBox->currentData());
-                });
+                [this, setting, comboBox] { modifySetting(setting, comboBox->currentData()); });
     }
 }
 
@@ -321,7 +277,7 @@ void QVOptionsDialog::syncSpinBox(QSpinBox *spinBox, SettingsManager::Setting se
 {
     auto val = qvApp->getSettingsManager().getInt(setting, defaults);
     spinBox->setValue(val);
-    transientSettings.insert(static_cast<int>(setting), val);
+    transientSettings.insert(setting, val);
 
     if (makeConnection) {
         connect(spinBox, QOverload<int>::of(&QSpinBox::valueChanged), this,
@@ -335,7 +291,7 @@ void QVOptionsDialog::syncDoubleSpinBox(QDoubleSpinBox *doubleSpinBox,
 {
     auto val = qvApp->getSettingsManager().getDouble(setting, defaults);
     doubleSpinBox->setValue(val);
-    transientSettings.insert(static_cast<int>(setting), val);
+    transientSettings.insert(setting, val);
 
     if (makeConnection) {
         connect(doubleSpinBox, QOverload<double>::of(&QDoubleSpinBox::valueChanged), this,
@@ -355,10 +311,7 @@ void QVOptionsDialog::syncShortcuts(bool defaults)
         const ShortcutManager::SShortcut &shortcut = shortcutsList.value(i);
 
         // Add shortcut to transient shortcut list
-        if (defaults)
-            transientShortcuts.append(shortcut.defaultShortcuts);
-        else
-            transientShortcuts.append(shortcut.shortcuts);
+        transientShortcuts.append(defaults ? shortcut.defaultShortcuts : shortcut.shortcuts);
 
         // Add shortcut to table widget
         auto *nameItem = new QTableWidgetItem();
@@ -418,13 +371,11 @@ void QVOptionsDialog::updateButtonBox()
     defaultsButton->setEnabled(false);
     applyButton->setEnabled(false);
 
-    // settings
-    const auto keys = transientSettings.keys();
-    for (const int key : keys) {
-        const auto setting = static_cast<SettingsManager::Setting>(key);
-        const auto &transientValue = transientSettings.value(key);
-        const auto savedValue = qvApp->getSettingsManager().getSetting(setting);
-        const auto defaultValue = qvApp->getSettingsManager().getSetting(setting, true);
+    const auto &settingsManager = qvApp->getSettingsManager();
+    for (const auto setting : transientSettings.keys()) {
+        const auto transientValue = transientSettings.value(setting);
+        const auto savedValue = settingsManager.getSetting(setting);
+        const auto defaultValue = settingsManager.getSetting(setting, true);
 
         if (transientValue != savedValue)
             applyButton->setEnabled(true);
@@ -432,7 +383,6 @@ void QVOptionsDialog::updateButtonBox()
             defaultsButton->setEnabled(true);
     }
 
-    // shortcuts
     const QList<ShortcutManager::SShortcut> &shortcutsList =
             qvApp->getShortcutManager().getShortcutsList();
     for (int i = 0; i < transientShortcuts.length(); i++) {
@@ -449,7 +399,6 @@ void QVOptionsDialog::updateButtonBox()
 
 void QVOptionsDialog::bgColorButtonClicked()
 {
-
     auto *colorDialog = new QColorDialog(ui->bgColorButton->text(), this);
     colorDialog->setWindowModality(Qt::WindowModal);
     connect(colorDialog, &QDialog::accepted, colorDialog, [this, colorDialog] {
@@ -476,7 +425,6 @@ void QVOptionsDialog::updateBgColorButton()
 void QVOptionsDialog::bgColorCheckboxStateChanged(int arg1)
 {
     setBgColorControlsEnabled(arg1 > 0);
-
     updateBgColorButton();
 }
 
@@ -489,10 +437,7 @@ void QVOptionsDialog::setBgColorControlsEnabled(bool enabled)
 
 void QVOptionsDialog::scalingCheckboxStateChanged(int arg1)
 {
-    if (arg1 > 0)
-        ui->scalingTwoCheckbox->setEnabled(true);
-    else
-        ui->scalingTwoCheckbox->setEnabled(false);
+    ui->scalingTwoCheckbox->setEnabled(arg1 > 0);
 }
 
 void QVOptionsDialog::windowResizeComboBoxCurrentIndexChanged(int index)

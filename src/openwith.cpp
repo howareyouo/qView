@@ -16,12 +16,10 @@
 
 const QList<OpenWith::OpenWithItem> OpenWith::getOpenWithItems(const QString &filePath)
 {
-
-    QList<OpenWithItem> listOfOpenWithItems;
     if (!filePath.isNull() && !QFileInfo::exists(filePath))
-        return listOfOpenWithItems;
+        return {};
 
-    listOfOpenWithItems = QVPlatformFunctions::getOpenWithItems(filePath);
+    QList<OpenWithItem> listOfOpenWithItems = QVPlatformFunctions::getOpenWithItems(filePath);
 
     // Natural/alphabetic sort
     QCollator collator;
@@ -49,8 +47,7 @@ QList<OpenWith::OpenWithItem> OpenWith::getOpenWithItemsFromDesktopFiles(const Q
     QString mimeName;
     if (!filePath.isEmpty()) {
         QMimeDatabase mimedb;
-        QMimeType mime = mimedb.mimeTypeForFile(filePath, QMimeDatabase::MatchContent);
-        mimeName = mime.name();
+        mimeName = mimedb.mimeTypeForFile(filePath, QMimeDatabase::MatchContent).name();
     }
 
     // This should probably be async dude
@@ -89,25 +86,22 @@ QList<OpenWith::OpenWithItem> OpenWith::getOpenWithItemsFromDesktopFiles(const Q
 
                 const QString key = line.left(equalsIndex);
                 const QString value = line.mid(equalsIndex + 1);
+                const auto keyIs = [&key](const QString &name) {
+                    return key.compare(name, Qt::CaseInsensitive) == 0;
+                };
 
-                if (key.compare("Name", Qt::CaseInsensitive) == 0
-                    && openWithItem.name.isEmpty()) {
+                if (keyIs("Name") && openWithItem.name.isEmpty()) {
                     openWithItem.name = value;
-                } else if (key.compare("Icon", Qt::CaseInsensitive) == 0
-                           && openWithItem.icon.isNull()) {
+                } else if (keyIs("Icon") && openWithItem.icon.isNull()) {
                     openWithItem.iconName = value;
-                } else if (key.compare("Categories", Qt::CaseInsensitive) == 0
-                           && openWithItem.categories.isEmpty()) {
+                } else if (keyIs("Categories") && openWithItem.categories.isEmpty()) {
                     openWithItem.categories = value.split(";");
-                } else if (key.compare("Exec", Qt::CaseInsensitive) == 0
-                           && openWithItem.exec.isEmpty()) {
+                } else if (keyIs("Exec") && openWithItem.exec.isEmpty()) {
                     // Strip the field codes (e.g. %f) from the command line
                     openWithItem.exec = QString(value).remove(QRegularExpression("%.*"));
-                } else if (key.compare("MimeType", Qt::CaseInsensitive) == 0
-                           && mimeTypes.isEmpty()) {
+                } else if (keyIs("MimeType") && mimeTypes.isEmpty()) {
                     mimeTypes = value;
-                } else if (key.compare("NoDisplay", Qt::CaseInsensitive) == 0
-                           || key.compare("Hidden", Qt::CaseInsensitive) == 0) {
+                } else if (keyIs("NoDisplay") || keyIs("Hidden")) {
                     if (value.compare("true", Qt::CaseInsensitive) == 0)
                         noDisplay = true;
                 }
@@ -128,7 +122,7 @@ QList<OpenWith::OpenWithItem> OpenWith::getOpenWithItemsFromDesktopFiles(const Q
 
 void OpenWith::showOpenWithDialog(QWidget *parent)
 {
-    auto mainWindow = reinterpret_cast<MainWindow *>(parent);
+    auto *mainWindow = static_cast<MainWindow *>(parent);
     QString filePath = mainWindow->getCurrentFileDetails().fileInfo.absoluteFilePath();
 #ifdef Q_OS_MACOS
     auto openWithDialog = new QFileDialog(parent);
@@ -165,9 +159,7 @@ void OpenWith::showOpenWithDialog(QWidget *parent)
 
 void OpenWith::openWithExecutable(const QString &executablePath, const QString &filePath)
 {
-    OpenWithItem item;
-    item.exec = executablePath;
-    openWith(filePath, item);
+    openWithExecutable(executablePath, QStringList(), filePath);
 }
 
 void OpenWith::openWithExecutable(const QString &executablePath, const QStringList &args,

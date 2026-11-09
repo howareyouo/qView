@@ -197,7 +197,6 @@ public:
 
     const QHash<QString, QAction *> &getActionLibrary() const { return actionLibrary; }
 
-    int getRecentsListMaxLength() const { return recentsListMaxLength; };
     int getOpenWithMaxLength() const { return openWithMaxLength; };
 
 signals:
@@ -209,6 +208,14 @@ protected:
     static bool hasAncestor(QObject *object, QObject *ancestor);
 
 private:
+    // Registers a menu built here in the clone library, keyed by its menu action's data
+    void trackClonedMenu(QMenu *menu);
+
+    // Adds the max hidden entries named "prefix0".."prefix{max-1}" that
+    // updateIndexedCloneActions fills in later
+    void createIndexedCloneActions(QMenu *menu, const QString &prefix, int max,
+                                   const QVariant &defaultItem);
+
     QHash<QString, QAction *> actionLibrary;
 
     QHash<QString, EnableRule> actionEnableRules;

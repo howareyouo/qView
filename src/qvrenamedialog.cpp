@@ -3,12 +3,11 @@
 #include <QDir>
 #include <QMessageBox>
 
-QVRenameDialog::QVRenameDialog(QWidget *parent, QFileInfo fileInfo) : QInputDialog(parent)
+QVRenameDialog::QVRenameDialog(QWidget *parent, QFileInfo fileInfo)
+    : QInputDialog(parent), fileInfo(fileInfo)
 {
     setAttribute(Qt::WA_DeleteOnClose);
     setWindowFlag(Qt::WindowContextHelpButtonHint, false);
-
-    this->fileInfo = fileInfo;
 
     setWindowTitle(tr("Rename..."));
     setLabelText(tr("File name:"));
@@ -27,23 +26,24 @@ void QVRenameDialog::onFinished(int result)
         return;
     }
 
-    if (result) {
-        const auto newFileName = textValue();
-        const auto newFilePath =
-                QDir::cleanPath(fileInfo.absolutePath() + QDir::separator() + newFileName);
+    if (result != QDialog::Accepted)
+        return;
 
-        emit readyToRenameFile();
+    const auto newFileName = textValue();
+    const auto newFilePath =
+            QDir::cleanPath(fileInfo.absolutePath() + QDir::separator() + newFileName);
 
-        if (fileInfo.absoluteFilePath() != newFilePath) {
-            if (QFile::rename(fileInfo.absoluteFilePath(), newFilePath)) {
-                emit newFileToOpen(newFilePath);
-            } else {
-                QMessageBox::critical(
-                        this, tr("Error"),
-                        tr("Could not rename %1:\n(Check that all characters are valid)")
-                                .arg(fileInfo.fileName()));
-            }
-        }
+    emit readyToRenameFile();
+
+    if (fileInfo.absoluteFilePath() == newFilePath)
+        return;
+
+    if (QFile::rename(fileInfo.absoluteFilePath(), newFilePath)) {
+        emit newFileToOpen(newFilePath);
+    } else {
+        QMessageBox::critical(this, tr("Error"),
+                              tr("Could not rename %1:\n(Check that all characters are valid)")
+                                      .arg(fileInfo.fileName()));
     }
 }
 
@@ -52,7 +52,7 @@ void QVRenameDialog::showEvent(QShowEvent *event)
     QInputDialog::showEvent(event);
 
     QLineEdit *lineEdit = findChild<QLineEdit *>();
-    const auto &lastDot = lineEdit->text().lastIndexOf(".");
+    const auto lastDot = lineEdit->text().lastIndexOf(".");
     if (lastDot != -1)
         lineEdit->setSelection(0, lastDot);
 }

@@ -37,7 +37,8 @@ private:
     // If update checking is enabled, this rate limits the auto-check that happens at startup
     const int STARTUP_CHECK_INTERVAL_HOURS = 4;
 
-    double latestVersionNum;
+    // -1 until a check has completed successfully
+    double latestVersionNum = -1.0;
 
     QString changelog;
 

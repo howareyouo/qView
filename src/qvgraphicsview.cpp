@@ -1,7 +1,6 @@
 #include "qvgraphicsview.h"
 #include "mainwindow.h"
 #include "qvapplication.h"
-#include "qvinfodialog.h"
 #include "qvplatformfunctions.h"
 #include "qvprofiler.h"
 #include "settingsmanager.h"
@@ -10,7 +9,6 @@
 #include <QGraphicsPixmapItem>
 #include <QGraphicsScene>
 #include <QSettings>
-#include <QMessageBox>
 #include <QMovie>
 #include <QtMath>
 #include <QGestureEvent>
@@ -133,66 +131,67 @@ void QVGraphicsView::mousePressEvent(QMouseEvent *event)
         windowMoveStarted = false;
     };
 
+    const bool leftButton = event->button() == Qt::LeftButton;
+    const bool frameless = window()->windowFlags().testFlag(Qt::FramelessWindowHint);
+
     // Check for Ctrl/Cmd drag
-    if (event->button() == Qt::LeftButton && event->modifiers().testFlag(Qt::ControlModifier)
-        && (window()->windowFlags().testFlag(Qt::FramelessWindowHint)
-            || qvApp->getSettingsManager().getBool(SettingsManager::Setting::CtrlDragWindow))) {
-        if (isWindowMovable()) {
-            if (!startWindowMove()) {
-                startFallbackWindowMove();
-            }
-            return;
-        }
+    if (leftButton && event->modifiers().testFlag(Qt::ControlModifier)
+        && (frameless
+            || qvApp->getSettingsManager().getBool(SettingsManager::Setting::CtrlDragWindow))
+        && isWindowMovable()) {
+        if (!startWindowMove())
+            startFallbackWindowMove();
+        return;
     }
 
     // A frameless window has no native resize border, so resize it from the edges of the view
-    if (event->button() == Qt::LeftButton
-        && window()->windowFlags().testFlag(Qt::FramelessWindowHint)) {
-        if (isWindowMovable()) {
-            const QPoint windowPos = viewport()->mapTo(window(), event->pos());
-            const QSize windowSize = window()->size();
-            const int resizeBorder = 6;
-
-            Qt::Edges edges;
-            if (windowPos.x() <= resizeBorder)
-                edges |= Qt::LeftEdge;
-            else if (windowPos.x() >= windowSize.width() - resizeBorder - 1)
-                edges |= Qt::RightEdge;
-            if (windowPos.y() <= resizeBorder)
-                edges |= Qt::TopEdge;
-            else if (windowPos.y() >= windowSize.height() - resizeBorder - 1)
-                edges |= Qt::BottomEdge;
-
-            if (edges != Qt::Edges()) {
-                window()->windowHandle()->startSystemResize(edges);
-                return;
-            }
-        }
-    }
-
-    // Check for titlebar region drag
-    if (event->button() == Qt::LeftButton && isWindowMovable()) {
-#ifdef COCOA_LOADED
-        // Check if click is in titlebar region
-        int titlebarHeight = QVPlatformFunctions::getTitlebarHeight(window()->windowHandle());
-        if (event->pos().y() <= titlebarHeight) {
-            if (!startWindowMove()) {
-                startFallbackWindowMove();
-            }
+    if (leftButton && frameless && isWindowMovable()) {
+        const Qt::Edges edges = framelessResizeEdgesAt(event->pos());
+        if (edges != Qt::Edges()) {
+            window()->windowHandle()->startSystemResize(edges);
             return;
         }
-#endif
     }
+
+#ifdef COCOA_LOADED
+    // Check for titlebar region drag
+    if (leftButton && isWindowMovable()
+        && event->pos().y() <= QVPlatformFunctions::getTitlebarHeight(window()->windowHandle())) {
+        if (!startWindowMove())
+            startFallbackWindowMove();
+        return;
+    }
+#endif
 
     // A fitted image leaves nothing to scroll, so a left drag moves the window instead of
     // silently doing nothing
-    if (event->button() == Qt::LeftButton && !hasPannableArea() && isWindowMovable()) {
+    if (leftButton && !hasPannableArea() && isWindowMovable()) {
         startFallbackWindowMove();
         event->accept();
         return;
     }
 
     QGraphicsView::mousePressEvent(event);
+}
+
+Qt::Edges QVGraphicsView::framelessResizeEdgesAt(const QPoint &viewportPos) const
+{
+    constexpr int resizeBorder = 6;
+
+    const QPoint windowPos = viewport()->mapTo(window(), viewportPos);
+    const QSize windowSize = window()->size();
+
+    Qt::Edges edges;
+    if (windowPos.x() <= resizeBorder)
+        edges |= Qt::LeftEdge;
+    else if (windowPos.x() >= windowSize.width() - resizeBorder - 1)
+        edges |= Qt::RightEdge;
+    if (windowPos.y() <= resizeBorder)
+        edges |= Qt::TopEdge;
+    else if (windowPos.y() >= windowSize.height() - resizeBorder - 1)
+        edges |= Qt::BottomEdge;
+
+    return edges;
 }
 
 bool QVGraphicsView::isWindowMovable() const
@@ -272,19 +271,12 @@ bool QVGraphicsView::event(QEvent *event)
         auto *gestureEvent = static_cast<QGestureEvent *>(event);
         if (QGesture *pinch = gestureEvent->gesture(Qt::PinchGesture)) {
             auto *pinchGesture = static_cast<QPinchGesture *>(pinch);
-            QPinchGesture::ChangeFlags changeFlags = pinchGesture->changeFlags();
 
-            if (changeFlags & QPinchGesture::ScaleFactorChanged) {
+            if (pinchGesture->changeFlags() & QPinchGesture::ScaleFactorChanged) {
                 const QPoint hotPoint = mapFromGlobal(pinchGesture->hotSpot().toPoint());
                 zoom(pinchGesture->scaleFactor(), hotPoint);
             }
 
-            // Fun rotation stuff maybe later
-            //            if (changeFlags & QPinchGesture::RotationAngleChanged) {
-            //                qreal rotationDelta = pinchGesture->rotationAngle() -
-            //                pinchGesture->lastRotationAngle(); rotate(rotationDelta);
-            //                centerOn(loadedPixmapItem);
-            //            }
             return true;
         }
     } else if (event->type() == QEvent::NativeGesture) {
@@ -302,22 +294,19 @@ void QVGraphicsView::wheelEvent(QWheelEvent *event)
 {
     const QPoint eventPos = event->position().toPoint();
 
+    const int scrollZoomSetting = qvGetSettingInt(SettingsManager::Setting::ScrollZoom);
     const bool modifierPressed = event->modifiers().testFlag(Qt::ControlModifier);
-    bool dontZoom = qvGetSettingInt(SettingsManager::Setting::ScrollZoom)
-            == SettingsManager::ScrollZoomsScroll;
-    if (modifierPressed) {
+    bool dontZoom = scrollZoomSetting == SettingsManager::ScrollZoomsScroll;
+    if (modifierPressed)
         dontZoom = !dontZoom;
-    }
 
-    bool touchDeviceDetected = false;
     // Auto-detect touchpad
-    touchDeviceDetected = event->device()->type() == QInputDevice::DeviceType::TouchPad
-            || event->device()->type() == QInputDevice::DeviceType::TouchScreen;
+    const QInputDevice::DeviceType deviceType = event->device()->type();
+    const bool isTouchDevice = deviceType == QInputDevice::DeviceType::TouchPad
+            || deviceType == QInputDevice::DeviceType::TouchScreen;
     // Real touchpads are likely to exhibit these characteristics in empirical testing
-    touchDeviceDetected = touchDeviceDetected && event->phase() != Qt::NoScrollPhase;
-    if (touchDeviceDetected
-        && qvGetSettingInt(SettingsManager::Setting::ScrollZoom)
-                == SettingsManager::ScrollZoomsAutoDetect) {
+    const bool touchDeviceDetected = isTouchDevice && event->phase() != Qt::NoScrollPhase;
+    if (touchDeviceDetected && scrollZoomSetting == SettingsManager::ScrollZoomsAutoDetect) {
         // If this is a touch device, override setting
         dontZoom = !modifierPressed;
     }
@@ -366,11 +355,11 @@ void QVGraphicsView::wheelEvent(QWheelEvent *event)
 QMimeData *QVGraphicsView::getMimeData() const
 {
     auto *mimeData = new QMimeData();
-    if (!getCurrentFileDetails().isPixmapLoaded)
+    const QVImageCore::FileDetails &fileDetails = getCurrentFileDetails();
+    if (!fileDetails.isPixmapLoaded)
         return mimeData;
 
-    mimeData->setUrls(
-            { QUrl::fromLocalFile(imageCore.getCurrentFileDetails().fileInfo.absoluteFilePath()) });
+    mimeData->setUrls({ QUrl::fromLocalFile(fileDetails.fileInfo.absoluteFilePath()) });
     mimeData->setImageData(imageCore.getLoadedPixmap().toImage());
     return mimeData;
 }
@@ -384,17 +373,15 @@ void QVGraphicsView::loadMimeData(const QMimeData *mimeData)
         return;
 
     const QList<QUrl> urlList = mimeData->urls();
+    if (urlList.isEmpty())
+        return;
 
-    bool first = true;
-    for (const auto &url : urlList) {
-        if (first) {
-            loadFile(url.toString());
-            emit cancelSlideshow();
-            first = false;
-            continue;
-        }
-        QVApplication::openFile(url.toString());
-    }
+    // The first file is loaded in this view, the rest open in a window of their own
+    loadFile(urlList.first().toString());
+    emit cancelSlideshow();
+
+    for (int i = 1; i < urlList.size(); ++i)
+        QVApplication::openFile(urlList.at(i).toString());
 }
 
 void QVGraphicsView::loadFile(const QString &fileName)
@@ -561,16 +548,24 @@ static void forgetWindowSizeIfShrunk(QSize &recordedSize, const QSize &currentSi
         recordedSize = QSize();
 }
 
-qreal QVGraphicsView::planGrowWindowForZoom(qreal scaleFactor, QSize &targetSize)
+// Whether a zoom step may move the window at all: the window has to be there with an image in it,
+// and the settings have to allow the automatic resizing
+bool QVGraphicsView::canResizeWindowForZoom() const
 {
-    QWidget *viewWindow = window();
-    if (!viewWindow || isOriginalSize || !getCurrentFileDetails().isPixmapLoaded)
-        return 1.0;
+    if (!window() || isOriginalSize || !getCurrentFileDetails().isPixmapLoaded)
+        return false;
 
     // Respect the user's choice of never resizing the window automatically
-    if (qvGetSettingInt(SettingsManager::Setting::WindowResizeMode) == SettingsManager::WindowResizeNever)
+    return qvGetSettingInt(SettingsManager::Setting::WindowResizeMode)
+            != SettingsManager::WindowResizeNever;
+}
+
+qreal QVGraphicsView::planGrowWindowForZoom(qreal scaleFactor, QSize &targetSize)
+{
+    if (!canResizeWindowForZoom())
         return 1.0;
 
+    QWidget *viewWindow = window();
     if (viewWindow->isMaximized() || viewWindow->isFullScreen())
         return 1.0;
 
@@ -603,15 +598,10 @@ qreal QVGraphicsView::planGrowWindowForZoom(qreal scaleFactor, QSize &targetSize
 
 qreal QVGraphicsView::planShrinkWindowForZoom(qreal scaleFactor, QSize &targetSize)
 {
+    if (!canResizeWindowForZoom())
+        return 1.0;
+
     QWidget *viewWindow = window();
-    if (!viewWindow || isOriginalSize || !getCurrentFileDetails().isPixmapLoaded)
-        return 1.0;
-
-    // Respect the user's choice of never resizing the window automatically
-    if (qvGetSettingInt(SettingsManager::Setting::WindowResizeMode)
-        == SettingsManager::WindowResizeNever)
-        return 1.0;
-
     if (viewWindow->isMaximized() || viewWindow->isFullScreen()) {
         preZoomWindowSize = QSize();
         return 1.0;
@@ -677,13 +667,10 @@ void QVGraphicsView::rememberFittedWindowSize()
 
 void QVGraphicsView::scaleExpensively()
 {
-    // Determine if mirrored or flipped
-    bool mirrored = transform().m11() < 0;
-    bool flipped = transform().m22() < 0;
-
     // If we are above maximum scaling size
     if ((currentScale >= MAX_EXPENSIVE_SCALING_SIZE)
-        || (!qvGetSettingBool(SettingsManager::Setting::ScalingTwoEnabled) && currentScale > 1.00001)) {
+        || (!qvGetSettingBool(SettingsManager::Setting::ScalingTwoEnabled)
+            && currentScale > 1.00001)) {
         // Return to original size
         makeUnscaled();
         return;
@@ -704,27 +691,29 @@ void QVGraphicsView::scaleExpensively()
             return;
     }
 
-    // Set image to scaled version, restoring mirror/flip with the new transform
-    loadedPixmapItem->setPixmap(imageCore.scaleExpensively(mappedPixmapSize));
-
-    setOrientedTransform(
-            mirrored, flipped,
-            QTransform::fromScale(qPow(devicePixelRatioF(), -1), qPow(devicePixelRatioF(), -1)));
+    // The scaled pixmap is devicePixelRatio times larger, so it is shown that much smaller
+    const qreal deviceScale = qPow(devicePixelRatioF(), -1);
+    setPixmapKeepingOrientation(imageCore.scaleExpensively(mappedPixmapSize),
+                                QTransform::fromScale(deviceScale, deviceScale));
 }
 
 void QVGraphicsView::makeUnscaled()
 {
-    // Determine if mirrored or flipped
-    bool mirrored = transform().m11() < 0;
-    bool flipped = transform().m22() < 0;
+    const QPixmap unscaled = getCurrentFileDetails().isMovieLoaded
+            ? getLoadedMovie().currentPixmap()
+            : getLoadedPixmap();
+    setPixmapKeepingOrientation(unscaled, absoluteTransform);
+}
 
-    // Return to original size
-    if (getCurrentFileDetails().isMovieLoaded)
-        loadedPixmapItem->setPixmap(getLoadedMovie().currentPixmap());
-    else
-        loadedPixmapItem->setPixmap(getLoadedPixmap());
+// The base transform does not carry the mirroring and flipping, so they are read off the transform
+// in use before it is replaced
+void QVGraphicsView::setPixmapKeepingOrientation(const QPixmap &pixmap, const QTransform &base)
+{
+    const bool mirrored = transform().m11() < 0;
+    const bool flipped = transform().m22() < 0;
 
-    setOrientedTransform(mirrored, flipped, absoluteTransform);
+    loadedPixmapItem->setPixmap(pixmap);
+    setOrientedTransform(mirrored, flipped, base);
 }
 
 void QVGraphicsView::setOrientedTransform(bool mirrored, bool flipped, const QTransform &base)
@@ -742,21 +731,18 @@ void QVGraphicsView::setOrientedTransform(bool mirrored, bool flipped, const QTr
 void QVGraphicsView::updateFilteringMode()
 {
     const bool exceededSmoothScaleLimit = currentScale >= MAX_FILTERING_SIZE;
-    loadedPixmapItem->setTransformationMode(!exceededSmoothScaleLimit
-                                                            && qvGetSettingBool(SettingsManager::Setting::FilteringEnabled)
-                                                    ? Qt::SmoothTransformation
-                                                    : Qt::FastTransformation);
+    const bool useSmoothTransformation = !exceededSmoothScaleLimit
+            && qvGetSettingBool(SettingsManager::Setting::FilteringEnabled);
+    loadedPixmapItem->setTransformationMode(useSmoothTransformation ? Qt::SmoothTransformation
+                                                                    : Qt::FastTransformation);
 }
 
-void QVGraphicsView::animatedFrameChanged(QRect rect)
+void QVGraphicsView::animatedFrameChanged(QRect)
 {
-    Q_UNUSED(rect)
-
-    if (qvGetSettingBool(SettingsManager::Setting::ScalingEnabled)) {
+    if (qvGetSettingBool(SettingsManager::Setting::ScalingEnabled))
         scaleExpensively();
-    } else {
+    else
         loadedPixmapItem->setPixmap(getLoadedMovie().currentPixmap());
-    }
 }
 
 // Whether two images are framed the same way, which is what lets a zoom carried over from one of
@@ -822,11 +808,10 @@ void QVGraphicsView::fitWindowToImage()
     if (!getCurrentFileDetails().isPixmapLoaded)
         return;
 
-    // check if the program is configured to resize the window
     const int windowResizeMode = qvGetSettingInt(SettingsManager::Setting::WindowResizeMode);
-    if (!(windowResizeMode == SettingsManager::WindowResizeAlways
-          || (windowResizeMode == SettingsManager::WindowResizeOnLaunch
-              && justLaunchedWithImage)))
+    const bool resizesWindow = windowResizeMode == SettingsManager::WindowResizeAlways
+            || (windowResizeMode == SettingsManager::WindowResizeOnLaunch && justLaunchedWithImage);
+    if (!resizesWindow)
         return;
 
     // The launch size belongs to the image the window was launched with. Cleared before the window
@@ -837,15 +822,13 @@ void QVGraphicsView::fitWindowToImage()
     if (!mainWindow)
         return;
 
-    // check if window is maximized or fullscreened
     if (mainWindow->windowState().testFlag(Qt::WindowMaximized)
         || mainWindow->windowState().testFlag(Qt::WindowFullScreen))
         return;
 
     // Use the full-resolution size: while a preview decode is on screen the loaded
     // pixmap is smaller than the actual image
-    QSize imageSize = getCurrentFileDetails().fullPixmapSize;
-    imageSize -= QSize(4, 4);
+    const QSize imageSize = getCurrentFileDetails().fullPixmapSize - QSize(4, 4);
 
 #ifdef Q_OS_WIN
     // Windows reports the wrong minimum width, so we constrain the image size relative to the dpi
@@ -933,18 +916,9 @@ void QVGraphicsView::applyRelativeZoom(qreal relativeFactor)
     absoluteTransform.scale(relativeFactor, relativeFactor);
 }
 
-// What the next session needs to put this zoom back: the shape of the image it belongs to and how
-// far past the fit scale it was zoomed, written as "16:9,1.2x". The shape is the ratio in its
-// lowest terms, and the zoom is a multiple of the fit scale, so neither depends on the image size or
-// the window it was shown in.
-QString QVGraphicsView::getZoomRecord() const
+// The shape an image is framed in, as a ratio in its lowest terms
+static QSize aspectRatioInLowestTerms(const QSize &imageSize)
 {
-    const QVImageCore::FileDetails &fileDetails = getCurrentFileDetails();
-    const QSize imageSize = imageSizeForZoomRecord(fileDetails);
-    if (!fileDetails.isPixmapLoaded || imageSize.isEmpty())
-        return QString();
-
-    // The ratio in its lowest terms, so the record reads the way the shape is known
     int divisor = imageSize.width();
     int remainder = imageSize.height();
     while (remainder != 0) {
@@ -952,6 +926,20 @@ QString QVGraphicsView::getZoomRecord() const
         divisor = remainder;
         remainder = nextRemainder;
     }
+
+    return QSize(imageSize.width() / divisor, imageSize.height() / divisor);
+}
+
+// What the next session needs to put this zoom back: the shape of the image it belongs to and how
+// far past the fit scale it was zoomed, written as "16:9,1.2x". The shape is the ratio in its
+// lowest terms, and the zoom is a multiple of the fit scale, so neither depends on the image size
+// or the window it was shown in.
+QString QVGraphicsView::getZoomRecord() const
+{
+    const QVImageCore::FileDetails &fileDetails = getCurrentFileDetails();
+    const QSize imageSize = imageSizeForZoomRecord(fileDetails);
+    if (!fileDetails.isPixmapLoaded || imageSize.isEmpty())
+        return QString();
 
     // At the actual size the zoom is remembered by the flag that goes with this record instead
     QString zoom = isOriginalSize ? QStringLiteral("1") : QString::number(currentScale, 'f', 3);
@@ -961,10 +949,8 @@ QString QVGraphicsView::getZoomRecord() const
     if (zoom.endsWith(u'.'))
         zoom.chop(1);
 
-    return QStringLiteral("%1:%2,%3x")
-            .arg(imageSize.width() / divisor)
-            .arg(imageSize.height() / divisor)
-            .arg(zoom);
+    const QSize shape = aspectRatioInLowestTerms(imageSize);
+    return QStringLiteral("%1:%2,%3x").arg(shape.width()).arg(shape.height()).arg(zoom);
 }
 
 // Zooms the image to a scale relative to the fit, without touching the window size the way
@@ -1061,7 +1047,7 @@ void QVGraphicsView::saveSessionZoom()
 
     QSettings settings;
     settings.setValue("lastzoom", getZoomRecord());
-    settings.setValue("lastzoomactualsize", getIsOriginalSize());
+    settings.setValue("lastzoomactualsize", isOriginalSize);
 }
 
 // Reads the zoom the last session ended at, if the settings ask for it to come back. It goes on the
@@ -1101,13 +1087,12 @@ qreal QVGraphicsView::maximumScaleOnScreen() const
 
 void QVGraphicsView::originalSize()
 {
-    if (isOriginalSize) {
-        // If we are at the actual original size
-        if (transform() == QTransform()) {
-            resetScale(); // back to normal mode
-            return;
-        }
+    // Already showing the actual size, unrotated: this goes back to the fit instead
+    if (isOriginalSize && transform() == QTransform()) {
+        resetScale();
+        return;
     }
+
     makeUnscaled();
 
     resetTransform();
@@ -1128,7 +1113,7 @@ void QVGraphicsView::goToFile(GoToFileMode mode, int index)
 
 void QVGraphicsView::fitInViewMarginless(const QRectF &rect)
 {
-    int obscuredHeight = QVPlatformFunctions::getObscuredHeight(window()->windowHandle());
+    const int obscuredHeight = QVPlatformFunctions::getObscuredHeight(window()->windowHandle());
 
     // Set adjusted image size / bounding rect based on
     QSize adjustedImageSize = getCurrentFileDetails().loadedPixmapSize;
@@ -1154,7 +1139,7 @@ void QVGraphicsView::fitInViewMarginless(const QRectF &rect)
         return;
 
     // Reset the view scale to 1:1.
-    QRectF unity = transform().mapRect(QRectF(0, 0, 1, 1));
+    const QRectF unity = transform().mapRect(QRectF(0, 0, 1, 1));
     if (unity.isEmpty())
         return;
     scale(1 / unity.width(), 1 / unity.height());
@@ -1184,7 +1169,7 @@ void QVGraphicsView::fitInViewMarginless(const QRectF &rect)
         return;
 
     // Find the ideal x / y scaling ratio to fit \a rect in the view.
-    QRectF sceneRect = transform().mapRect(adjustedBoundingRect);
+    const QRectF sceneRect = transform().mapRect(adjustedBoundingRect);
     if (sceneRect.isEmpty())
         return;
 
@@ -1193,11 +1178,11 @@ void QVGraphicsView::fitInViewMarginless(const QRectF &rect)
 
     xratio = yratio = qMin(xratio, yratio);
 
-    // Find and set the transform required to fit the original image
-    // Compact version of above code
-    QRectF sceneRect2 = transform().mapRect(QRectF({}, adjustedImageSize));
-    qreal absoluteRatio =
-            qMin(viewRect.width() / sceneRect2.width(), viewRect.height() / sceneRect2.height());
+    // The transform that shows the whole image at the fit scale, which is what zooming is measured
+    // against
+    const QRectF imageSceneRect = transform().mapRect(QRectF({}, adjustedImageSize));
+    const qreal absoluteRatio = qMin(viewRect.width() / imageSceneRect.width(),
+                                     viewRect.height() / imageSceneRect.height());
 
     absoluteTransform = QTransform::fromScale(absoluteRatio, absoluteRatio);
 
@@ -1209,7 +1194,6 @@ void QVGraphicsView::fitInViewMarginless(const QRectF &rect)
     scale(xratio, yratio);
     centerOn(adjustedBoundingRect.center());
 
-    // variables
     zoomBasis = transform();
 
     isOriginalSize = false;
@@ -1220,16 +1204,16 @@ void QVGraphicsView::fitInViewMarginless(const QRectF &rect)
 
 void QVGraphicsView::fitInViewMarginless(const QGraphicsItem *item)
 {
-    return fitInViewMarginless(item->sceneBoundingRect());
+    fitInViewMarginless(item->sceneBoundingRect());
 }
 
 void QVGraphicsView::centerOn(const QPointF &pos)
 {
-    int obscuredHeight = QVPlatformFunctions::getObscuredHeight(window()->windowHandle());
+    const int obscuredHeight = QVPlatformFunctions::getObscuredHeight(window()->windowHandle());
 
-    qreal width = viewport()->width();
-    qreal height = viewport()->height() - obscuredHeight;
-    QPointF viewPoint = transform().map(pos);
+    const qreal width = viewport()->width();
+    const qreal height = viewport()->height() - obscuredHeight;
+    const QPointF viewPoint = transform().map(pos);
 
     if (isRightToLeft()) {
         qint64 horizontal = 0;

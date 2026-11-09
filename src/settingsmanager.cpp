@@ -86,29 +86,42 @@ QDir SettingsManager::translationsDir()
     return QDir(QCoreApplication::applicationDirPath() + QStringLiteral("/translations"));
 }
 
+namespace {
+// "qview_de.qm" -> "de". The hardcoded English fallback entry ends in ".ts" instead of ".qm", so
+// only the affix lengths are used and the extension itself is never inspected.
+QString languageCodeFromTranslationFileName(const QString &fileName)
+{
+    const int prefixLength = 6; // "qview_"
+    const int suffixLength = 3; // ".qm"
+    const auto codeLength = fileName.length() - prefixLength - suffixLength;
+    if (codeLength <= 0) // name too short to carry a code
+        return QString();
+
+    return fileName.mid(prefixLength, codeLength);
+}
+} // namespace
+
 QString SettingsManager::getSystemLanguage() const
 {
     auto entries = translationsDir().entryList({ QStringLiteral("qview_*.qm") }, QDir::Files);
-    entries.prepend("qview_en.ts");
-    const auto centries = entries;
+    entries.prepend(QStringLiteral("qview_en.ts"));
 
     const auto languages = QLocale::system().uiLanguages();
     for (auto language : languages) {
         language.replace('-', '_');
         const auto countryless = language.left(2);
 
-        for (auto entry : centries) {
-            entry.remove(0, 6);
-            entry.remove(entry.length() - 3, 3);
+        for (const auto &entry : entries) {
+            const QString code = languageCodeFromTranslationFileName(entry);
 
-            if (entry == language)
+            if (code == language)
                 return language;
 
-            if (entry == countryless)
+            if (code == countryless)
                 return countryless;
         }
     }
-    return "en";
+    return QStringLiteral("en");
 }
 
 bool SettingsManager::loadTranslation() const
@@ -157,17 +170,15 @@ void SettingsManager::loadSettings()
     settings.beginGroup("options");
     bool changed = false;
 
-    // Get the meta enum for Setting
-    QMetaEnum metaEnum = QMetaEnum::fromType<Setting>();
+    const QMetaEnum metaEnum = QMetaEnum::fromType<Setting>();
     Q_ASSERT(metaEnum.keyCount() == settingDataCache.size());
 
-    // Loop through all enum values and load from file
     for (int i = 0; i < metaEnum.keyCount(); ++i) {
-        Setting setting = static_cast<Setting>(metaEnum.value(i));
+        const Setting setting = static_cast<Setting>(metaEnum.value(i));
         SettingData &data = settingDataCache[i];
         const QString &key = getSettingKey(setting);
 
-        QVariant newValue = settings.value(key, data.defaultValue);
+        const QVariant newValue = settings.value(key, data.defaultValue);
         if (data.value != newValue) {
             changed = true;
             data.value = newValue;
@@ -204,14 +215,16 @@ const SettingsManager::SettingData &SettingsManager::getSettingData(Setting sett
     return settingDataCache[index];
 }
 
+// Values outside the enum have no storage name; callers skip them rather than write to QSettings
+// under an empty name
 const QString &SettingsManager::getSettingKey(Setting setting)
 {
-    static const QString empty;
-    int index = static_cast<int>(setting);
-    if (index >= 0 && index < settingKeys.size()) {
-        return settingKeys[index];
-    }
-    return empty;
+    static const QString noKey;
+    const int index = static_cast<int>(setting);
+    if (index < 0 || index >= settingKeys.size())
+        return noKey;
+
+    return settingKeys[index];
 }
 
 const QVariant &SettingsManager::getSetting(Setting setting, bool defaults) const
@@ -244,16 +257,15 @@ QString SettingsManager::getString(Setting setting, bool defaults) const
 
 void SettingsManager::initializeSettingDataCache()
 {
-    QMetaEnum metaEnum = QMetaEnum::fromType<SettingsManager::Setting>();
-    int enumCount = metaEnum.keyCount();
+    const int settingCount = QMetaEnum::fromType<Setting>().keyCount();
+    settingDataCache.resize(settingCount);
+    settingKeys.resize(settingCount);
 
-    settingDataCache.resize(enumCount);
-    settingKeys.resize(enumCount);
-
-    // Fill vectors based on definitions
-    for (const auto &def : settingDefinitions) {
-        int index = static_cast<int>(def.setting);
-        settingDataCache[index] = { def.defaultValue, {} };
-        settingKeys[index] = def.key;
+    // settingDefinitions is indexed by enum value, so each definition fills the slot of its own
+    // setting in both caches
+    for (const auto &definition : settingDefinitions) {
+        const int index = static_cast<int>(definition.setting);
+        settingDataCache[index] = { definition.defaultValue, {} };
+        settingKeys[index] = definition.key;
     }
 }

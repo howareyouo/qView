@@ -5,20 +5,18 @@
 #include <QGuiApplication>
 #include <QMenuBar>
 #include <QScreen>
-#include <QVarLengthArray>
 
 namespace {
 
-// Initially copied from Qt source code (QGuiApplication::screenAt) and then customized
+// Adapted from Qt source code (QGuiApplication::screenAt). That version also keeps a list of the
+// screens it has already visited; here a screen visited twice costs nothing, because the
+// comparison below is strict and a repeat can never beat the largest area found so far.
 QScreen *screenContaining(const QRect &rect)
 {
     QScreen *bestScreen = nullptr;
     int bestScreenArea = 0;
-    QVarLengthArray<const QScreen *, 8> visitedScreens;
     const auto screens = QGuiApplication::screens();
     for (const QScreen *screen : screens) {
-        if (visitedScreens.contains(screen))
-            continue;
         // The virtual siblings include the screen itself, so iterate directly
         const auto siblings = screen->virtualSiblings();
         for (QScreen *sibling : siblings) {
@@ -28,10 +26,17 @@ QScreen *screenContaining(const QRect &rect)
                 bestScreen = sibling;
                 bestScreenArea = area;
             }
-            visitedScreens.append(sibling);
         }
     }
     return bestScreen;
+}
+
+// The largest size the window can take on screen: the room the screen leaves once the part the
+// window frame adds around the content is taken off
+QSize maximumSizeOn(const QWidget &window, QScreen *screen)
+{
+    const QSize frameExtraSize = window.frameGeometry().size() - window.size();
+    return screen->availableSize() - frameExtraSize;
 }
 
 } // namespace
@@ -54,8 +59,7 @@ QScreen *screenFor(const QWidget &window)
 
 QSize maximumWindowSize(const QWidget &window)
 {
-    const QSize frameExtraSize = window.frameGeometry().size() - window.size();
-    return screenFor(window)->availableSize() - frameExtraSize;
+    return maximumSizeOn(window, screenFor(window));
 }
 
 void resizeKeepingCenter(QWidget &window, const QSize &targetSize)
@@ -90,13 +94,12 @@ void resizeToImage(MainWindow &window, const QSize &imageSize, const QSize &mini
 
     if (window.isMenuBarVisible())
         extraWidgetsSize.rheight() += window.menuBar()->height();
+    // Zero everywhere but on macOS, where the titlebar covers part of the content
+    extraWidgetsSize.rheight() += window.getTitlebarOverlap();
 
-    const int titlebarOverlap = window.getTitlebarOverlap();
-    if (titlebarOverlap != 0)
-        extraWidgetsSize.rheight() += titlebarOverlap;
-
-    const QSize hardLimitSize = maximumWindowSize(window) - extraWidgetsSize;
-    const QSize screenSize = screenFor(window)->size();
+    QScreen *screen = screenFor(window);
+    const QSize hardLimitSize = maximumSizeOn(window, screen) - extraWidgetsSize;
+    const QSize screenSize = screen->size();
     const QSize minWindowSize = (screenSize * minWindowResizedPercentage).boundedTo(hardLimitSize);
     const QSize maxWindowSize = (screenSize * maxWindowResizedPercentage).boundedTo(hardLimitSize);
 
@@ -111,12 +114,11 @@ void resizeToImage(MainWindow &window, const QSize &imageSize, const QSize &mini
 
     // Windows reports the wrong minimum width, so we constrain the image size relative to the dpi
     // to stop weirdness with tiny images
-    if (!minimumImageSize.isEmpty()) {
-        if (fittedImageSize.boundedTo(minimumImageSize) == fittedImageSize)
-            fittedImageSize = minimumImageSize;
-    }
+    if (!minimumImageSize.isEmpty()
+        && fittedImageSize.boundedTo(minimumImageSize) == fittedImageSize)
+        fittedImageSize = minimumImageSize;
 
     resizeKeepingCenter(window, fittedImageSize + extraWidgetsSize);
 }
 
-}
+} // namespace WindowGeometry

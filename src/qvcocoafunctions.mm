@@ -141,12 +141,6 @@ bool QVCocoaFunctions::startSystemMove(QWidget *widget)
     return true;
 }
 
-void QVCocoaFunctions::performWindowDrag(QWidget *widget)
-{
-    NSView *view = (NSView *)widget->winId();
-    [view.window performWindowDragWithEvent:[NSApp currentEvent]];
-}
-
 int QVCocoaFunctions::getTitlebarHeight(QWindow *window)
 {
     if (!window)
@@ -261,24 +255,6 @@ QList<OpenWith::OpenWithItem> QVCocoaFunctions::getOpenWithItems(const QString &
     }
 
     return listOfOpenWithItems;
-}
-
-QString QVCocoaFunctions::deleteFile(const QString &filePath)
-{
-    auto fileUrl = QUrl(filePath);
-    fileUrl.setScheme("file");
-
-    NSURL *resultUrl = nil;
-    NSError *error = nil;
-    BOOL success = [[NSFileManager defaultManager] trashItemAtURL:fileUrl.toNSURL()
-                                                 resultingItemURL:&resultUrl
-                                                            error:&error];
-    if (!success) {
-        NSLog(@"trashItemAtUrl:resultingItemUrl:error: returned error == %@", error);
-        return "";
-    }
-
-    return QString::fromNSString(resultUrl.absoluteString);
 }
 
 QByteArray QVCocoaFunctions::getIccProfileForWindow(const QWindow *window)

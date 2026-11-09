@@ -12,18 +12,17 @@ UpdateChecker::UpdateChecker(QObject *parent) : QObject(parent)
 {
     QV_PROFILE_SCOPE("startup: update checker");
 
-    latestVersionNum = -1.0;
-
     connect(&netAccessManager, &QNetworkAccessManager::finished, this, &UpdateChecker::readReply);
 }
 
 void UpdateChecker::check(bool isStartupCheck)
 {
     if (isStartupCheck) {
-        QDateTime lastCheckTime = getLastCheckTime();
-        if (lastCheckTime.isValid()
-            && QDateTime::currentDateTimeUtc()
-                    < lastCheckTime.addSecs(STARTUP_CHECK_INTERVAL_HOURS * 3600))
+        const QDateTime lastCheckTime = getLastCheckTime();
+        const bool checkedRecently = lastCheckTime.isValid()
+                && QDateTime::currentDateTimeUtc()
+                        < lastCheckTime.addSecs(STARTUP_CHECK_INTERVAL_HOURS * 3600);
+        if (checkedRecently)
             return;
     }
 
@@ -59,8 +58,7 @@ void UpdateChecker::readReply(QNetworkReply *reply)
         return;
     }
 
-    QByteArray byteArray = reply->readAll();
-    QJsonDocument json = QJsonDocument::fromJson(byteArray);
+    QJsonDocument json = QJsonDocument::fromJson(reply->readAll());
 
     if (json.isNull()) {
         qWarning() << "Error checking for updates: Received null JSON";
@@ -82,8 +80,8 @@ void UpdateChecker::readReply(QNetworkReply *reply)
         changelogList.removeFirst();
     changelog = changelogList.join("\n");
 
-    releaseDate = QDateTime::fromString(object.value("published_at").toString(), Qt::ISODate);
-    releaseDate = releaseDate.toTimeSpec(Qt::LocalTime);
+    releaseDate = QDateTime::fromString(object.value("published_at").toString(), Qt::ISODate)
+                          .toTimeSpec(Qt::LocalTime);
 
     setLastCheckTime(QDateTime::currentDateTimeUtc());
 

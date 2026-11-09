@@ -22,32 +22,33 @@ QVWelcomeDialog::QVWelcomeDialog(QWidget *parent) : QDialog(parent), ui(new Ui::
     qvApp->ensureFontLoaded(":/fonts/Lato-Light.ttf");
     qvApp->ensureFontLoaded(":/fonts/Lato-Regular.ttf");
 
-    int modifier = 0;
-    // set main title font
 #ifdef Q_OS_MACOS
-    const QFont font1 = QFont("Lato", 72, QFont::Light);
-    modifier = 4;
+    const int modifier = 4;
+    const int logoFontSize = 72;
 #else
-    QFont font1 = QFont("Lato", 54, QFont::Light);
+    const int modifier = 0;
+    const int logoFontSize = 54;
 #endif
-    ui->logoLabel->setFont(font1);
+
+    // set main title font
+    ui->logoLabel->setFont(QFont("Lato", logoFontSize, QFont::Light));
 
     // set subtitle font & text
-    QFont font2 = QFont("Lato", 14 + modifier);
-    font2.setStyleName("Regular");
+    QFont subtitleFont("Lato", 14 + modifier);
+    subtitleFont.setStyleName("Regular");
     const QString subtitleText =
             tr("Thank you for downloading qView.<br>Here's a few tips to get you started:");
-    ui->subtitleLabel->setFont(font2);
+    ui->subtitleLabel->setFont(subtitleFont);
     ui->subtitleLabel->setText(subtitleText);
 
     // set info font & text
-    QFont font3 = QFont("Lato", 12 + modifier);
-    font3.setStyleName("Regular");
-    const QString updateText = tr("<ul><li>Right click to access the main menu</li><li>Drag the "
-                                  "image to reposition it</li><li>Scroll to zoom in and "
-                                  "out</li><li>Use arrow keys to switch files</li></ul>");
-    ui->infoLabel->setFont(font3);
-    ui->infoLabel->setText(updateText);
+    QFont infoFont("Lato", 12 + modifier);
+    infoFont.setStyleName("Regular");
+    const QString tipsText = tr("<ul><li>Right click to access the main menu</li><li>Drag the "
+                                "image to reposition it</li><li>Scroll to zoom in and "
+                                "out</li><li>Use arrow keys to switch files</li></ul>");
+    ui->infoLabel->setFont(infoFont);
+    ui->infoLabel->setText(tipsText);
 
     ui->infoLabel->setTextInteractionFlags(Qt::TextBrowserInteraction);
     ui->infoLabel->setOpenExternalLinks(true);

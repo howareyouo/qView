@@ -68,11 +68,11 @@ private slots:
 private:
     Ui::QVOptionsDialog *ui;
 
-    QHash<int, QVariant> transientSettings;
+    QMap<SettingsManager::Setting, QVariant> transientSettings;
 
     QList<QStringList> transientShortcuts;
 
-    bool languageRestartMessageShown;
+    bool languageRestartMessageShown = false;
 };
 
 #endif // QVOPTIONSDIALOG_H

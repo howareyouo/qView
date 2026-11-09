@@ -120,7 +120,6 @@ public:
     const QPixmap &getLoadedPixmap() const { return loadedPixmap; }
     const QMovie &getLoadedMovie() const { return loadedMovie; }
     const FileDetails &getCurrentFileDetails() const { return currentFileDetails; }
-    int getCurrentRotation() const { return currentRotation; }
 
     // Sets the size in device pixels that preview decodes should target
     void setFitTargetSize(const QSize &devicePixelSize) { fitTargetSize = devicePixelSize; }
@@ -161,10 +160,17 @@ private:
 
     FolderScanParams makeFolderScanParams(const QString &dirPath) const;
 
+    // The directory to scan: the requested one, or the directory the loaded file came from when
+    // none was requested. Empty when there is nothing to scan.
+    QString folderPathToScan(const QString &requestedPath) const;
+
+    // Adopts a finished folder scan as the listing of the current folder
+    void applyFolderScanInfo(const FolderScanInfo &scanInfo);
+
     ReadData readFile(const QString &fileName, const QColorSpace &targetColorSpace,
                       const FolderScanParams &folderScanParams, QSize previewTargetSize = {},
                       qint64 fileSize = -1);
-    static QString getPixmapCacheKey(const QString &absoluteFilePath, const qint64 &fileSize,
+    static QString getPixmapCacheKey(const QString &absoluteFilePath, qint64 fileSize,
                                      const QColorSpace &targetColorSpace);
     void addToCache(const ReadData &readImageAndFileInfo);
     void requestCachingFile(const QString &filePath, const QColorSpace &targetColorSpace);
@@ -176,11 +182,15 @@ private:
     void startPendingPreloadDecodes();
     void startPreloadDecode(const QString &filePath);
 
+    // Animation detection and teardown for the QMovie the current file may be shown with
+    void startMovieIfAnimated();
+    void clearLoadedMovie();
+
     QPixmap loadedPixmap;
     QMovie loadedMovie;
 
     FileDetails currentFileDetails;
-    int currentRotation;
+    int currentRotation = 0;
 
     QFutureWatcher<ReadData> loadFutureWatcher;
     QFutureWatcher<FolderScanInfo> folderInfoFutureWatcher;
@@ -202,9 +212,9 @@ private:
     // actually invalidates it
     mutable FolderScanSettings lastFolderScanSettings;
 
-    int largestDimension;
+    int largestDimension = 0;
 
-    bool waitingOnLoad;
+    bool waitingOnLoad = false;
 
     // Size in device pixels that preview decodes should target
     QSize fitTargetSize;

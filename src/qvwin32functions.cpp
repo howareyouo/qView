@@ -10,12 +10,31 @@
 #include <QFileInfo>
 #include <QFile>
 #include <QDir>
-#include <QCollator>
-#include <QVersionNumber>
-#include <QXmlStreamReader>
 #include <QWindow>
 
 #include <QDebug>
+
+namespace {
+
+// The shell allocates the strings it reports for an association handler with CoTaskMemAlloc, so
+// the copy taken into a QString is freed here again
+QString fromShellString(LPWSTR value)
+{
+    const QString result = QString::fromWCharArray(value);
+    CoTaskMemFree(value);
+    return result;
+}
+
+// The name Windows shows for the program registered to open this extension
+QString defaultProgramNameFor(const QString &extension)
+{
+    WCHAR assocString[MAX_PATH];
+    DWORD assocStringSize = MAX_PATH;
+    AssocQueryStringW(0, ASSOCSTR_FRIENDLYAPPNAME, qUtf16Printable(extension), L"open", assocString,
+                      &assocStringSize);
+    return QString::fromWCharArray(assocString);
+}
+} // namespace
 
 // Owns the shell association handler behind an open-with entry: the shell hands back a
 // reference, and this is where it is released again, so an entry only has to carry the handler
@@ -44,10 +63,7 @@ QString AssocHandler::uiName() const
     LPWSTR value = nullptr;
     if (FAILED(handler->GetUIName(&value)))
         return QString();
-
-    const QString result = QString::fromWCharArray(value);
-    CoTaskMemFree(value);
-    return result;
+    return fromShellString(value);
 }
 
 QString AssocHandler::name() const
@@ -55,10 +71,7 @@ QString AssocHandler::name() const
     LPWSTR value = nullptr;
     if (FAILED(handler->GetName(&value)))
         return QString();
-
-    const QString result = QString::fromWCharArray(value);
-    CoTaskMemFree(value);
-    return result;
+    return fromShellString(value);
 }
 
 QString AssocHandler::iconLocation() const
@@ -67,10 +80,7 @@ QString AssocHandler::iconLocation() const
     int index = 0;
     if (FAILED(handler->GetIconLocation(&value, &index)))
         return QString();
-
-    const QString result = QString::fromWCharArray(value);
-    CoTaskMemFree(value);
-    return result;
+    return fromShellString(value);
 }
 
 QList<OpenWith::OpenWithItem> QVWin32Functions::getOpenWithItems(const QString &filePath)
@@ -78,15 +88,9 @@ QList<OpenWith::OpenWithItem> QVWin32Functions::getOpenWithItems(const QString &
     QList<OpenWith::OpenWithItem> listOfOpenWithItems;
 
     QFileInfo info(filePath);
-    QString extension = "." + info.suffix();
+    const QString extension = "." + info.suffix();
 
-    // Get default program first
-    WCHAR assocString[MAX_PATH];
-    DWORD assocStringSize = MAX_PATH;
-    AssocQueryStringW(0, ASSOCSTR_FRIENDLYAPPNAME, qUtf16Printable(extension), L"open", assocString,
-                      &assocStringSize);
-
-    QString defaultProgramName = QString::fromWCharArray(assocString);
+    const QString defaultProgramName = defaultProgramNameFor(extension);
 
     // Get the big list of recommended assochandlers for this file type
     IEnumAssocHandlers *assocHandlers = 0;
@@ -106,15 +110,11 @@ QList<OpenWith::OpenWithItem> QVWin32Functions::getOpenWithItems(const QString &
         openWithItem.name = assocHandler->uiName();
         openWithItem.exec = assocHandler->name();
         const QString iconLocation = assocHandler->iconLocation();
+        const bool isAppx = iconLocation.contains("ms-resource");
 
-        // An entry the shell can neither name nor point at can be shown or invoked; skip it
+        // An entry the shell can neither name nor point at cannot be shown or invoked; skip it
         if (openWithItem.name.isEmpty() || openWithItem.exec.isEmpty())
             continue;
-
-        openWithItem.isDefault = openWithItem.name == defaultProgramName;
-        openWithItem.winAssocHandler = assocHandler;
-
-        bool isAppx = iconLocation.contains("ms-resource");
 
         // Don't include qView in open with menu
         if (openWithItem.name == "qView")
@@ -125,6 +125,11 @@ QList<OpenWith::OpenWithItem> QVWin32Functions::getOpenWithItems(const QString &
             qDebug() << openWithItem.name << "is an invalid openwith entry";
             continue;
         }
+
+        // An entry is the default one when the shell reports the same name for it. Compare before
+        // the name is escaped for the menu below.
+        openWithItem.isDefault = openWithItem.name == defaultProgramName;
+        openWithItem.winAssocHandler = assocHandler;
 
         // Replace ampersands with escaped ampersands for menu items
         openWithItem.name.replace("&", "&&");
@@ -151,13 +156,12 @@ QList<OpenWith::OpenWithItem> QVWin32Functions::getOpenWithItems(const QString &
 void QVWin32Functions::openWithInvokeAssocHandler(const QString &filePath,
                                                   AssocHandler *winAssocHandler)
 {
-    const QString &nativeFilePath = QDir::toNativeSeparators(filePath);
+    const QString nativeFilePath = QDir::toNativeSeparators(filePath);
 
     // Create IShellItem
     IShellItem *shellItem = 0;
-    HRESULT result = SHCreateItemFromParsingName(qUtf16Printable(nativeFilePath), NULL,
-                                                 IID_IShellItem, (void **)&shellItem);
-    if (!SUCCEEDED(result)) {
+    if (!SUCCEEDED(SHCreateItemFromParsingName(qUtf16Printable(nativeFilePath), NULL,
+                                               IID_IShellItem, (void **)&shellItem))) {
         qDebug() << "Failed to create IShellItem for " << filePath;
         return;
     }
@@ -179,7 +183,7 @@ void QVWin32Functions::openWithInvokeAssocHandler(const QString &filePath,
 
 void QVWin32Functions::showOpenWithDialog(const QString &filePath, const QWindow *parent)
 {
-    const QString &nativeFilePath = QDir::toNativeSeparators(filePath);
+    const QString nativeFilePath = QDir::toNativeSeparators(filePath);
     const OPENASINFO info = { qUtf16Printable(nativeFilePath), 0, OAIF_EXEC };
 
     HWND winId = reinterpret_cast<HWND>(parent->winId());
@@ -189,28 +193,30 @@ void QVWin32Functions::showOpenWithDialog(const QString &filePath, const QWindow
 
 QByteArray QVWin32Functions::getIccProfileForWindow(const QWindow *window)
 {
-    QByteArray result;
     const HWND hWnd = reinterpret_cast<HWND>(window->winId());
     const HMONITOR hMonitor = MonitorFromWindow(hWnd, MONITOR_DEFAULTTONEAREST);
-    if (hMonitor) {
-        MONITORINFOEXW monitorInfo;
-        monitorInfo.cbSize = sizeof(MONITORINFOEXW);
-        if (GetMonitorInfoW(hMonitor, &monitorInfo)) {
-            const HDC hDC = CreateICW(monitorInfo.szDevice, monitorInfo.szDevice, NULL, NULL);
-            if (hDC) {
-                WCHAR profilePathBuff[MAX_PATH];
-                DWORD profilePathSize = MAX_PATH;
-                if (GetICMProfileW(hDC, &profilePathSize, profilePathBuff)) {
-                    QString profilePath = QString::fromWCharArray(profilePathBuff);
-                    QFile file(profilePath);
-                    if (file.open(QIODevice::ReadOnly)) {
-                        result = file.readAll();
-                        file.close();
-                    }
-                }
-                DeleteDC(hDC);
-            }
-        }
+    if (!hMonitor)
+        return QByteArray();
+
+    MONITORINFOEXW monitorInfo;
+    monitorInfo.cbSize = sizeof(MONITORINFOEXW);
+    if (!GetMonitorInfoW(hMonitor, &monitorInfo))
+        return QByteArray();
+
+    // The profile is a property of the monitor's device context, not of the window
+    const HDC hDC = CreateICW(monitorInfo.szDevice, monitorInfo.szDevice, NULL, NULL);
+    if (!hDC)
+        return QByteArray();
+
+    QByteArray result;
+    WCHAR profilePathBuff[MAX_PATH];
+    DWORD profilePathSize = MAX_PATH;
+    if (GetICMProfileW(hDC, &profilePathSize, profilePathBuff)) {
+        QFile file(QString::fromWCharArray(profilePathBuff));
+        if (file.open(QIODevice::ReadOnly))
+            result = file.readAll();
     }
+
+    DeleteDC(hDC);
     return result;
 }

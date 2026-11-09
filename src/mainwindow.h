@@ -30,7 +30,7 @@ public:
 
     void requestPopulateOpenWithMenu();
 
-    void populateOpenWithMenu(const QList<OpenWith::OpenWithItem> openWithItems);
+    void populateOpenWithMenu(QList<OpenWith::OpenWithItem> openWithItems);
 
     void openWithMenuAboutToShow();
 
@@ -127,6 +127,10 @@ protected:
 
     void updateFullscreenLabelGeometry();
 
+    // Shows the fullscreen label only when the window is fullscreen and the settings ask for
+    // details, and gives it its floating position
+    void refreshFullscreenLabel();
+
     void updateFrameless();
 
 protected slots:
@@ -134,13 +138,13 @@ protected slots:
     void shortcutsUpdated();
 
 private:
-    Ui::MainWindow *ui;
-    QVGraphicsView *graphicsView;
-
     // Builds the menu bar the first time it is needed. It is skipped entirely when the menu bar
     // is disabled, since building it is one of the more expensive parts of window setup and its
     // actions also exist as clones in the virtual menu that holds the window shortcuts.
     void ensureMenuBar();
+
+    Ui::MainWindow *ui;
+    QVGraphicsView *graphicsView;
 
     QMenu *contextMenu;
     QMenu *virtualMenu;

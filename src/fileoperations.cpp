@@ -8,16 +8,34 @@
 #include <QFileInfo>
 #include <QMessageBox>
 
+namespace {
+
+// A permanent delete is worded the same everywhere; moving to the trash has to name whatever the
+// platform calls its trash.
+QString deleteConfirmationText(const MainWindow &window, bool permanent, const QString &fileName)
+{
+    if (permanent)
+        return window.tr("Are you sure you want to delete %1 permanently? This can't be undone.")
+                .arg(fileName);
+
+#ifdef Q_OS_WIN
+    return window.tr("Are you sure you want to move %1 to the Recycle Bin?").arg(fileName);
+#else
+    return window.tr("Are you sure you want to move %1 to the Trash?").arg(fileName);
+#endif
+}
+
+} // namespace
+
 void FileOperations::askDeleteFile(MainWindow &window, bool permanent)
 {
-    if (!permanent
-        && !qvApp->getSettingsManager().getBool(SettingsManager::Setting::AskDelete)) {
+    if (!permanent && !qvApp->getSettingsManager().getBool(SettingsManager::Setting::AskDelete)) {
         deleteFile(window, permanent);
         return;
     }
 
     const QFileInfo &fileInfo = window.getCurrentFileDetails().fileInfo;
-    const QString fileName = window.getCurrentFileDetails().fileInfo.fileName();
+    const QString fileName = fileInfo.fileName();
 
     if (!fileInfo.isWritable()) {
         QMessageBox::critical(
@@ -27,36 +45,25 @@ void FileOperations::askDeleteFile(MainWindow &window, bool permanent)
         return;
     }
 
-    QString messageText;
-    if (permanent) {
-        messageText = window.tr("Are you sure you want to delete %1 permanently? This can't be "
-                                "undone.")
-                              .arg(fileName);
-    } else {
-#ifdef Q_OS_WIN
-        messageText = window.tr("Are you sure you want to move %1 to the Recycle Bin?").arg(fileName);
-#else
-        messageText = window.tr("Are you sure you want to move %1 to the Trash?").arg(fileName);
-#endif
-    }
-
-    auto *msgBox = new QMessageBox(QMessageBox::Question, window.tr("Delete"), messageText,
+    auto *msgBox = new QMessageBox(QMessageBox::Question, window.tr("Delete"),
+                                   deleteConfirmationText(window, permanent, fileName),
                                    QMessageBox::Yes | QMessageBox::No, &window);
     if (!permanent)
         msgBox->setCheckBox(new QCheckBox(window.tr("Do not ask again")));
 
-    QObject::connect(msgBox, &QMessageBox::finished, &window, [&window, msgBox, permanent](int result) {
-        if (result != QMessageBox::Yes)
-            return;
+    QObject::connect(msgBox, &QMessageBox::finished, &window,
+                     [&window, msgBox, permanent](int result) {
+                         if (result != QMessageBox::Yes)
+                             return;
 
-        if (!permanent) {
-            QMap<SettingsManager::Setting, QVariant> changedSettings;
-            changedSettings.insert(SettingsManager::Setting::AskDelete,
-                                   !msgBox->checkBox()->isChecked());
-            qvApp->getSettingsManager().applySettings(changedSettings);
-        }
-        window.deleteFile(permanent);
-    });
+                         if (!permanent) {
+                             QMap<SettingsManager::Setting, QVariant> changedSettings;
+                             changedSettings.insert(SettingsManager::Setting::AskDelete,
+                                                    !msgBox->checkBox()->isChecked());
+                             qvApp->getSettingsManager().applySettings(changedSettings);
+                         }
+                         window.deleteFile(permanent);
+                     });
 
     msgBox->open();
 }
@@ -73,13 +80,9 @@ void FileOperations::deleteFile(MainWindow &window, bool permanent)
     QString trashFilePath;
     if (permanent) {
         success = QFile::remove(filePath);
-    } else {
-        QString trashedPath;
-        const auto outcome = QVPlatformFunctions::moveToTrash(filePath, &trashedPath);
-        if (outcome == QVPlatformFunctions::TrashOutcome::Success) {
-            success = true;
-            trashFilePath = trashedPath;
-        }
+    } else if (QVPlatformFunctions::moveToTrash(filePath, &trashFilePath)
+               == QVPlatformFunctions::TrashOutcome::Success) {
+        success = true;
     }
 
     if (!success || QFile::exists(filePath)) {
@@ -89,11 +92,11 @@ void FileOperations::deleteFile(MainWindow &window, bool permanent)
         return;
     }
 
-    const auto afterDelete =
+    const int afterDeleteAction =
             qvApp->getSettingsManager().getInt(SettingsManager::Setting::AfterDelete);
-    if (afterDelete > SettingsManager::AfterDeleteDoNothing)
+    if (afterDeleteAction > SettingsManager::AfterDeleteDoNothing)
         window.view().goToFile(QVGraphicsView::GoToFileMode::next);
-    else if (afterDelete < SettingsManager::AfterDeleteDoNothing)
+    else if (afterDeleteAction < SettingsManager::AfterDeleteDoNothing)
         window.view().goToFile(QVGraphicsView::GoToFileMode::previous);
 
     if (!trashFilePath.isEmpty())
@@ -113,16 +116,15 @@ void FileOperations::undoDelete(MainWindow &window)
 
     const QFileInfo fileInfo(lastDeletedFile.pathInTrash);
     if (!fileInfo.isWritable()) {
-        QMessageBox::critical(&window,
-                              window.tr("Error"),
+        QMessageBox::critical(&window, window.tr("Error"),
                               window.tr("Can't undo deletion of %1:\n"
                                         "No write permission or file is read-only.")
                                       .arg(fileInfo.fileName()));
         return;
     }
 
-    bool success = QFile::rename(lastDeletedFile.pathInTrash, lastDeletedFile.previousPath);
-    if (!success) {
+    const bool renamed = QFile::rename(lastDeletedFile.pathInTrash, lastDeletedFile.previousPath);
+    if (!renamed) {
         QMessageBox::critical(&window, window.tr("Error"),
                               window.tr("Failed undoing deletion of %1.").arg(fileInfo.fileName()));
     }

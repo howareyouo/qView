@@ -6,7 +6,6 @@
 
 #include <QFileOpenEvent>
 #include <QSettings>
-#include <QTimer>
 #include <QFileDialog>
 #include <QFontDatabase>
 #include <QMutex>
@@ -42,7 +41,8 @@ QVApplication::QVApplication(int &argc, char **argv) : QApplication(argc, argv)
     setAttribute(Qt::AA_DontShowIconsInMenus);
 #endif
     // Adwaita Qt styles should hide icons for a more consistent look
-    if (style()->objectName() == "adwaita-dark" || style()->objectName() == "adwaita")
+    const QString styleName = style()->objectName();
+    if (styleName == "adwaita-dark" || styleName == "adwaita")
         setAttribute(Qt::AA_DontShowIconsInMenus);
 
     // Setup macOS dock menu
@@ -61,7 +61,8 @@ QVApplication::QVApplication(int &argc, char **argv) : QApplication(argc, argv)
     // Set mac-specific application settings
     QVPlatformFunctions::setUserDefaults();
 #ifdef Q_OS_MACOS
-    setQuitOnLastWindowClosed(getSettingsManager().getBool(SettingsManager::Setting::QuitOnLastWindow));
+    setQuitOnLastWindowClosed(
+            getSettingsManager().getBool(SettingsManager::Setting::QuitOnLastWindow));
 #endif
 }
 
@@ -107,17 +108,17 @@ void QVApplication::pickFile(MainWindow *parent)
 
     connect(fileDialog, &QFileDialog::filesSelected, fileDialog,
             [parent](const QStringList &selected) {
-                bool isFirstLoop = true;
-                for (const auto &file : selected) {
-                    if (isFirstLoop && parent)
-                        parent->openFile(file);
-                    else
-                        QVApplication::openFile(file);
+                const QString &firstFile = selected.constFirst();
+                // The first file reuses the parent window, any beyond it get their own window
+                if (parent)
+                    parent->openFile(firstFile);
+                else
+                    QVApplication::openFile(firstFile);
 
-                    isFirstLoop = false;
-                }
+                for (const auto &file : selected.mid(1))
+                    QVApplication::openFile(file);
 
-                setLastFileDialogDir(QFileInfo(selected.constFirst()).path());
+                setLastFileDialogDir(QFileInfo(firstFile).path());
             });
     fileDialog->show();
 }
@@ -141,54 +142,48 @@ MainWindow *QVApplication::newWindow()
     QElapsedTimer windowTimer;
     windowTimer.start();
 
-    auto *w = new MainWindow();
-    QVProfile::record("startup: new window (construct)", windowTimer.nsecsElapsed());
-    windowTimer.restart();
+    // Records the step that just finished and starts the clock for the next one
+    const auto recordWindowPhase = [&windowTimer](const char *phase) {
+        QVProfile::record(phase, windowTimer.nsecsElapsed());
+        windowTimer.restart();
+    };
 
-    w->show();
-    QVProfile::record("startup: new window (show)", windowTimer.nsecsElapsed());
-    windowTimer.restart();
+    auto *window = new MainWindow();
+    recordWindowPhase("startup: new window (construct)");
 
-    w->raise();
-    QVProfile::record("startup: new window (raise)", windowTimer.nsecsElapsed());
+    window->show();
+    recordWindowPhase("startup: new window (show)");
 
-    return w;
+    window->raise();
+    recordWindowPhase("startup: new window (raise)");
+
+    return window;
 }
 
 MainWindow *QVApplication::getMainWindow(bool shouldBeEmpty)
 {
+    // File info is set if an image load is requested, but not loaded
+    const auto isUsableWindow = [shouldBeEmpty](MainWindow *window) {
+        return window && (!shouldBeEmpty || !window->getCurrentFileDetails().isLoadRequested);
+    };
+
     // Attempt to use from list of last active windows
     for (const auto &window : qAsConst(lastActiveWindows)) {
-        if (!window)
-            continue;
-
-        if (shouldBeEmpty) {
-            // File info is set if an image load is requested, but not loaded
-            if (!window->getCurrentFileDetails().isLoadRequested) {
-                return window;
-            }
-        } else {
+        if (isUsableWindow(window))
             return window;
-        }
     }
 
     // If none of those are valid, scan the list for any existing MainWindow
     const auto topLevelWidgets = QApplication::topLevelWidgets();
     for (const auto &widget : topLevelWidgets) {
         if (auto *window = qobject_cast<MainWindow *>(widget)) {
-            if (shouldBeEmpty) {
-                if (!window->getCurrentFileDetails().isLoadRequested) {
-                    return window;
-                }
-            } else {
+            if (isUsableWindow(window))
                 return window;
-            }
         }
     }
 
     // If there are no valid ones, make a new one.
-    auto *window = newWindow();
-    return window;
+    return newWindow();
 }
 
 void QVApplication::checkUpdates(bool isStartupCheck)
@@ -241,57 +236,60 @@ void QVApplication::deleteFromLastActiveWindows(MainWindow *window)
     lastActiveWindows.removeAll(window);
 }
 
-void QVApplication::openOptionsDialog(QWidget *parent)
+namespace {
+
+// Brings an already open dialog to the front. Returns false if it has not been created yet.
+template <typename Dialog>
+bool raiseIfAlreadyOpen(const QPointer<Dialog> &dialog)
+{
+    if (!dialog)
+        return false;
+
+    dialog->raise();
+    dialog->activateWindow();
+    return true;
+}
+
+// On macOS, the dialogs should not be dependent on any window
+QWidget *dialogParent(QWidget *parent)
 {
 #ifdef Q_OS_MACOS
-    // On macOS, the dialog should not be dependent on any window
-    parent = nullptr;
+    Q_UNUSED(parent)
+    return nullptr;
+#else
+    return parent;
 #endif
+}
 
-    if (optionsDialog) {
-        optionsDialog->raise();
-        optionsDialog->activateWindow();
+} // namespace
+
+void QVApplication::openOptionsDialog(QWidget *parent)
+{
+    if (raiseIfAlreadyOpen(optionsDialog))
         return;
-    }
 
-    optionsDialog = new QVOptionsDialog(parent);
+    optionsDialog = new QVOptionsDialog(dialogParent(parent));
     optionsDialog->show();
 }
 
 void QVApplication::openWelcomeDialog(QWidget *parent)
 {
-#ifdef Q_OS_MACOS
-    // On macOS, the dialog should not be dependent on any window
-    parent = nullptr;
-#endif
-
-    if (welcomeDialog) {
-        welcomeDialog->raise();
-        welcomeDialog->activateWindow();
+    if (raiseIfAlreadyOpen(welcomeDialog))
         return;
-    }
 
-    welcomeDialog = new QVWelcomeDialog(parent);
+    welcomeDialog = new QVWelcomeDialog(dialogParent(parent));
     welcomeDialog->show();
 }
 
 void QVApplication::openAboutDialog(QWidget *parent)
 {
-#ifdef Q_OS_MACOS
-    // On macOS, the dialog should not be dependent on any window
-    parent = nullptr;
-#endif
-
-    if (aboutDialog) {
-        aboutDialog->raise();
-        aboutDialog->activateWindow();
+    if (raiseIfAlreadyOpen(aboutDialog))
         return;
-    }
 
 #ifndef QV_DISABLE_ONLINE_VERSION_CHECK
-    aboutDialog = new QVAboutDialog(updateChecker.getLatestVersionNum(), parent);
+    aboutDialog = new QVAboutDialog(updateChecker.getLatestVersionNum(), dialogParent(parent));
 #else
-    aboutDialog = new QVAboutDialog(-1, parent);
+    aboutDialog = new QVAboutDialog(-1, dialogParent(parent));
 #endif // QV_DISABLE_ONLINE_VERSION_CHECK
     aboutDialog->show();
 }
@@ -324,10 +322,11 @@ QVApplication::FilterLists QVApplication::buildFilterLists()
         lists.fileExtensionList << extension;
     };
 
-    // Build the filterlist, filterstring, and filterregexplist in one loop
+    // Build the extension list and the name filter string in one loop. Qt 5.15 added pdf support
+    // to QImageReader but it is super broken in qView, so pdf is skipped in both this list and
+    // the mime type list below
     for (const auto &byteArray : byteArrayFormats) {
         const auto fileExtension = "." + QString::fromUtf8(byteArray);
-        // Qt 5.15 seems to have added pdf support for QImageReader but it is super broken in qView
         if (fileExtension == ".pdf")
             continue;
 
@@ -351,12 +350,9 @@ QVApplication::FilterLists QVApplication::buildFilterLists()
     const auto &byteArrayMimeTypes = QImageReader::supportedMimeTypes();
     lists.mimeTypeNameList.reserve(byteArrayMimeTypes.size() - 1);
     for (const auto &byteArray : byteArrayMimeTypes) {
-        // Qt 5.15 seems to have added pdf support for QImageReader but it is super broken in qView
-        const QString mime = QString::fromUtf8(byteArray);
-        if (mime == "application/pdf")
-            continue;
-
-        lists.mimeTypeNameList << mime;
+        const auto mime = QString::fromUtf8(byteArray);
+        if (mime != "application/pdf")
+            lists.mimeTypeNameList << mime;
     }
 
     // Build name filter list for file dialogs

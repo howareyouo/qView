@@ -22,6 +22,9 @@
 // The samples are aggregated per name and printed once when the application quits.
 namespace QVProfile {
 
+// What a name has cost so far: total nanoseconds, and how many samples were added to it
+using Totals = QPair<qint64, int>;
+
 inline bool isEnabled()
 {
     static const bool enabled = qEnvironmentVariableIsSet("QV_PROFILE");
@@ -34,22 +37,26 @@ inline QMutex &sampleMutex()
     return mutex;
 }
 
-// name -> (total nanoseconds, sample count)
-inline QHash<QString, QPair<qint64, int>> &samples()
+inline QHash<QString, Totals> &samples()
 {
-    static QHash<QString, QPair<qint64, int>> registry;
+    static QHash<QString, Totals> registry;
     return registry;
+}
+
+// Adds one sample of value nanoseconds to name. Callers check isEnabled() themselves, so that
+// measuring costs nothing while profiling is off.
+inline void accumulate(const char *name, qint64 value)
+{
+    QMutexLocker locker(&sampleMutex());
+    Totals &sample = samples()[QString::fromLatin1(name)];
+    sample.first += value;
+    sample.second++;
 }
 
 inline void record(const char *name, qint64 nanoseconds)
 {
-    if (!isEnabled())
-        return;
-
-    QMutexLocker locker(&sampleMutex());
-    auto &sample = samples()[QString::fromLatin1(name)];
-    sample.first += nanoseconds;
-    sample.second++;
+    if (isEnabled())
+        accumulate(name, nanoseconds);
 }
 
 // Wall clock for milestones that happen outside a scope, for example "when did the window really
@@ -75,13 +82,8 @@ inline qint64 sinceStartup()
 // Records a one-shot milestone as the time elapsed since startStartupClock()
 inline void milestone(const char *name)
 {
-    if (!isEnabled())
-        return;
-
-    QMutexLocker locker(&sampleMutex());
-    auto &sample = samples()[QString::fromLatin1(name)];
-    sample.first += sinceStartup();
-    sample.second++;
+    if (isEnabled())
+        accumulate(name, sinceStartup());
 }
 
 inline void dump()
@@ -89,17 +91,19 @@ inline void dump()
     if (!isEnabled())
         return;
 
-    QHash<QString, QPair<qint64, int>> collected;
+    // Take the samples out under the lock, then sort and print without holding it
+    QHash<QString, Totals> collected;
     {
         QMutexLocker locker(&sampleMutex());
         collected.swap(samples());
     }
 
-    QList<QPair<QString, QPair<qint64, int>>> sorted;
+    QList<QPair<QString, Totals>> sorted;
     sorted.reserve(collected.size());
     for (auto it = collected.constBegin(); it != collected.constEnd(); ++it)
         sorted.append({ it.key(), it.value() });
 
+    // Heaviest total first
     std::sort(sorted.begin(), sorted.end(), [](const auto &first, const auto &second) {
         return first.second.first > second.second.first;
     });
@@ -144,6 +148,7 @@ private:
 
 } // namespace QVProfile
 
+// Two levels so that __LINE__ is expanded before it is pasted into the variable name
 #define QV_PROFILE_CONCAT_INNER(first, second) first##second
 #define QV_PROFILE_CONCAT(first, second) QV_PROFILE_CONCAT_INNER(first, second)
 #define QV_PROFILE_SCOPE(name) QVProfile::Scope QV_PROFILE_CONCAT(qvProfileScope, __LINE__)(name)

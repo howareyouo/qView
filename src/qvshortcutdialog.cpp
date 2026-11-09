@@ -4,8 +4,6 @@
 
 #include <QMessageBox>
 
-#include <QDebug>
-
 QVShortcutDialog::QVShortcutDialog(int index,
                                    GetTransientShortcutCallback getTransientShortcutCallback,
                                    QWidget *parent)
@@ -32,36 +30,42 @@ QVShortcutDialog::~QVShortcutDialog()
 
 void QVShortcutDialog::done(int r)
 {
-    if (r == QDialog::Accepted) {
-        return;
-    }
-
-    QDialog::done(r);
+    // The dialog is closed by acceptValidated() once the entered shortcuts have been validated, so
+    // ignore the accepted result coming from the button box.
+    if (r != QDialog::Accepted)
+        QDialog::done(r);
 }
 
 void QVShortcutDialog::buttonBoxClicked(QAbstractButton *button)
 {
-    if (ui->buttonBox->buttonRole(button) == QDialogButtonBox::AcceptRole) {
-        QStringList shortcutsStringList = ui->keySequenceEdit->keySequence().toString().split(", ");
-        const auto sequenceList = ShortcutManager::stringListToKeySequenceList(shortcutsStringList);
+    const auto role = ui->buttonBox->buttonRole(button);
 
-        for (const auto &sequence : sequenceList) {
-            auto conflictingShortcut = shortcutAlreadyBound(sequence, shortcutObject.name);
-            if (!conflictingShortcut.isEmpty()) {
-                QString nativeShortcutString = sequence.toString(QKeySequence::NativeText);
-                QMessageBox::warning(this, tr("Shortcut Already Used"),
-                                     tr("\"%1\" is already bound to \"%2\"")
-                                             .arg(nativeShortcutString, conflictingShortcut));
-                return;
-            }
-        }
-
-        acceptValidated();
-
-        emit shortcutsListChanged(index, shortcutsStringList);
-    } else if (ui->buttonBox->buttonRole(button) == QDialogButtonBox::ResetRole) {
+    if (role == QDialogButtonBox::ResetRole) {
         ui->keySequenceEdit->setKeySequence(shortcutObject.defaultShortcuts.join(", "));
+        return;
     }
+
+    if (role != QDialogButtonBox::AcceptRole)
+        return;
+
+    const QStringList shortcutsStringList =
+            ui->keySequenceEdit->keySequence().toString().split(", ");
+    const auto sequenceList = ShortcutManager::stringListToKeySequenceList(shortcutsStringList);
+
+    for (const auto &sequence : sequenceList) {
+        const auto conflictingShortcut = shortcutAlreadyBound(sequence, shortcutObject.name);
+        if (!conflictingShortcut.isEmpty()) {
+            const QString nativeShortcutString = sequence.toString(QKeySequence::NativeText);
+            QMessageBox::warning(this, tr("Shortcut Already Used"),
+                                 tr("\"%1\" is already bound to \"%2\"")
+                                         .arg(nativeShortcutString, conflictingShortcut));
+            return;
+        }
+    }
+
+    acceptValidated();
+
+    emit shortcutsListChanged(index, shortcutsStringList);
 }
 
 QString QVShortcutDialog::shortcutAlreadyBound(const QKeySequence &chosenSequence,

@@ -36,8 +36,6 @@ public:
 
     static void pickFile(MainWindow *parent = nullptr);
 
-    static void pickUrl(MainWindow *parnet = nullptr);
-
     static QString getLastFileDialogDir();
 
     static void setLastFileDialogDir(const QString &dir);
