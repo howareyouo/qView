@@ -171,10 +171,10 @@ private:
     qreal planGrowWindowForZoom(qreal scaleFactor, QSize &targetSize);
     qreal planShrinkWindowForZoom(qreal scaleFactor, QSize &targetSize);
 
-    // Resizes the window for a zoom step and answers how much the fit really grew by: a window the
-    // screen has no room left for keeps the size it had, so it grows by one and leaves the whole
-    // step to the image
-    qreal applyZoomWindowResize(const QSize &targetSize);
+    // Resizes the window for a zoom step and answers whether it got the size it was asked for: a
+    // window the screen has no room left for keeps the size it had, and the step it could not take
+    // is left to the image
+    bool applyZoomWindowResize(const QSize &targetSize);
 
     bool isWindowMovable() const;
 

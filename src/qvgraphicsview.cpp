@@ -481,12 +481,13 @@ void QVGraphicsView::zoom(qreal requestedStep, QPoint pos)
             rememberWindowSizeBeforeGrowing(preZoomWindowSize, window());
 
         // A window the screen has no room left for keeps the size it had, so what it could not
-        // take belongs to the image instead of being dropped. It never counts as growing by less
-        // than one, which is the window staying where it is.
-        const qreal actualWindowStep = qMax(applyZoomWindowResize(windowTargetSize), 1.0);
-
-        if (stepInFitUnits > 1.0) {
-            imageStep = qMax(stepInFitUnits / actualWindowStep, 1.0);
+        // take belongs to the image instead of being dropped. A window that got the size it asked
+        // for took the whole step and leaves the image at the fit, where the next step can grow
+        // the window again: the fit follows the window through a border and a margin, so measuring
+        // how far it moved would hand the image the odd pixel and take it off the fit for good.
+        const bool windowTookTheStep = applyZoomWindowResize(windowTargetSize);
+        if (stepInFitUnits > 1.0 && !windowTookTheStep) {
+            imageStep = stepInFitUnits;
             // The window is where it will stay, so the limits have to be judged again
             if (imageStep >= MAX_ZOOM_SCALE || imageStep <= MIN_ZOOM_SCALE)
                 return;
@@ -528,15 +529,11 @@ void QVGraphicsView::zoom(qreal requestedStep, QPoint pos)
     }
 }
 
-qreal QVGraphicsView::applyZoomWindowResize(const QSize &targetSize)
+bool QVGraphicsView::applyZoomWindowResize(const QSize &targetSize)
 {
     QWidget *viewWindow = window();
-    if (!viewWindow || currentScale <= 0.0)
-        return 1.0;
-
-    // The fit is measured rather than assumed to follow the target size, since a window the screen
-    // has no room for keeps the size it had
-    const qreal fitBefore = absoluteTransform.m11() / currentScale;
+    if (!viewWindow)
+        return false;
 
     // The new window size, the refitted scene and the repainted content have to reach the screen
     // as one frame. A plain resize leaves the enlarged area unfilled for a moment, which the
@@ -553,10 +550,9 @@ qreal QVGraphicsView::applyZoomWindowResize(const QSize &targetSize)
     lastZoomEventPos = QPoint(-1, -1);
     lastZoomRoundingError = QPointF();
 
-    const qreal fitAfter = absoluteTransform.m11() / currentScale;
-    if (fitBefore <= 0.0 || fitAfter <= 0.0)
-        return 1.0;
-    return fitAfter / fitBefore;
+    // A window the screen has no room for keeps the size it had, which is the only way the size
+    // asked for does not come back
+    return viewWindow->size() == targetSize;
 }
 
 // A window resized by hand is no longer the size zooming comes back to
