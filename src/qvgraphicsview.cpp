@@ -479,7 +479,18 @@ void QVGraphicsView::zoom(qreal requestedStep, QPoint pos)
         // heading for, which is what the next step has to shrink towards again
         if (stepInFitUnits > 1.0)
             rememberWindowSizeBeforeGrowing(preZoomWindowSize, window());
-        applyZoomWindowResize(windowTargetSize);
+
+        // A window the screen has no room left for keeps the size it had, so what it could not
+        // take belongs to the image instead of being dropped. It never counts as growing by less
+        // than one, which is the window staying where it is.
+        const qreal actualWindowStep = qMax(applyZoomWindowResize(windowTargetSize), 1.0);
+
+        if (stepInFitUnits > 1.0) {
+            imageStep = qMax(stepInFitUnits / actualWindowStep, 1.0);
+            // The window is where it will stay, so the limits have to be judged again
+            if (imageStep >= MAX_ZOOM_SCALE || imageStep <= MIN_ZOOM_SCALE)
+                return;
+        }
     }
 
     // The window took care of the whole step
@@ -517,11 +528,15 @@ void QVGraphicsView::zoom(qreal requestedStep, QPoint pos)
     }
 }
 
-void QVGraphicsView::applyZoomWindowResize(const QSize &targetSize)
+qreal QVGraphicsView::applyZoomWindowResize(const QSize &targetSize)
 {
     QWidget *viewWindow = window();
-    if (!viewWindow)
-        return;
+    if (!viewWindow || currentScale <= 0.0)
+        return 1.0;
+
+    // The fit is measured rather than assumed to follow the target size, since a window the screen
+    // has no room for keeps the size it had
+    const qreal fitBefore = absoluteTransform.m11() / currentScale;
 
     // The new window size, the refitted scene and the repainted content have to reach the screen
     // as one frame. A plain resize leaves the enlarged area unfilled for a moment, which the
@@ -537,6 +552,11 @@ void QVGraphicsView::applyZoomWindowResize(const QSize &targetSize)
     // The cursor zoom rounding error belongs to the old geometry
     lastZoomEventPos = QPoint(-1, -1);
     lastZoomRoundingError = QPointF();
+
+    const qreal fitAfter = absoluteTransform.m11() / currentScale;
+    if (fitBefore <= 0.0 || fitAfter <= 0.0)
+        return 1.0;
+    return fitAfter / fitBefore;
 }
 
 // A window resized by hand is no longer the size zooming comes back to
