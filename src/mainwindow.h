@@ -143,8 +143,12 @@ private:
     // actions also exist as clones in the virtual menu that holds the window shortcuts.
     void ensureMenuBar();
 
-    // Writes the window's geometry, including a maximized or fullscreen state, so the next session
-    // opens the window the way this one left it
+    // Writes what the next session needs to open the window the way this one left it: the zoom it
+    // ended at and then the geometry, including a maximized or fullscreen state
+    void saveSession();
+
+    // Writes the window's geometry on its own, which has to come after the zoom of the session
+    // that is ending
     void saveWindowGeometry();
 
     Ui::MainWindow *ui;

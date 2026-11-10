@@ -15,11 +15,11 @@ QScreen *screenFor(const QWidget &window);
 // The largest size the window can take on its screen, with the part its frame adds taken off
 QSize maximumWindowSize(const QWidget &window);
 
-// Resizes the window around its own center, keeping it inside its screen
+// Resizes the window around its own center, keeping its frame inside its screen
 void resizeKeepingCenter(QWidget &window, const QSize &targetSize);
 
-// The size the window takes when it is given the image's size, honoring the min/max resize
-// percentages from the settings and the platform-provided minimum image size (used on Windows)
+// The size the window would be given to fit the image, honoring the min/max resize percentages
+// from the settings and the platform-provided minimum image size (used on Windows)
 QSize fittedWindowSize(MainWindow &window, const QSize &imageSize, const QSize &minimumImageSize);
 } // namespace WindowGeometry
 

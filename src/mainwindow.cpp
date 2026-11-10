@@ -152,12 +152,9 @@ MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent), ui(new Ui::MainWi
     QSettings settings;
     restoreGeometry(settings.value("geometry").toByteArray());
 
-    // Exiting without closing the window skips closeEvent, so save the geometry and the zoom on the
-    // way out too
-    connect(qApp, &QCoreApplication::aboutToQuit, this, [this]() {
-        saveWindowGeometry();
-        graphicsView->saveSessionZoom();
-    });
+    // Exiting without closing the window skips closeEvent, so save what the next session needs on
+    // the way out too
+    connect(qApp, &QCoreApplication::aboutToQuit, this, &MainWindow::saveSession);
 
     QVProfile::record("startup: window restore", startupTimer.nsecsElapsed());
 
@@ -211,6 +208,15 @@ void MainWindow::showEvent(QShowEvent *event)
     QMainWindow::showEvent(event);
 }
 
+// Writes everything the next session needs to open the way this one ends. The zoom goes first
+// because turning full size content view off for the geometry changes the window's size on macOS,
+// and the zoom records the size it was shown in
+void MainWindow::saveSession()
+{
+    graphicsView->saveSessionZoom();
+    saveWindowGeometry();
+}
+
 void MainWindow::saveWindowGeometry()
 {
     // Full size content view can confuse saveGeometry, making it think the window is taller than
@@ -223,10 +229,7 @@ void MainWindow::saveWindowGeometry()
 
 void MainWindow::closeEvent(QCloseEvent *event)
 {
-    saveWindowGeometry();
-
-    // Save the zoom the session ends at so the next launch can go back to it
-    graphicsView->saveSessionZoom();
+    saveSession();
 
     qvApp->deleteFromLastActiveWindows(this);
     qvApp->getActionManager().untrackClonedActions(contextMenu);

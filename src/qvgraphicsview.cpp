@@ -434,10 +434,10 @@ void QVGraphicsView::zoom(qreal requestedStep, QPoint pos)
     const bool cursorZoom = pos != QPoint(-1, -1);
     const QPoint globalPos = cursorZoom ? viewport()->mapToGlobal(pos) : QPoint(-1, -1);
 
-    // The window only ever takes whole steps at the fit scale, since a resize refits the image
-    // and would drop the zoom it had. So a step that would end off fit is split instead: the
-    // image goes back to fit exactly and the window takes the rest of the step. Leaving the
-    // image even slightly off fit would keep the window from shrinking back again.
+    // The window only ever takes the part of a step that starts at the fit scale, since a resize
+    // refits the image and would drop the zoom it had. So a step that ends past the fit is split
+    // instead: the image goes back to fit exactly and the window takes the rest of the step.
+    // Leaving the image even slightly off fit would keep the window from shrinking back again.
     const bool atFit = isAtFit();
     // The whole step in fit-relative units, which is the scale the window is moved by
     const qreal stepInFitUnits = currentScale * requestedStep;
@@ -487,9 +487,11 @@ void QVGraphicsView::zoom(qreal requestedStep, QPoint pos)
         // how far it moved would hand the image the odd pixel and take it off the fit for good.
         const bool windowTookTheStep = applyZoomWindowResize(windowTargetSize);
         if (stepInFitUnits > 1.0 && !windowTookTheStep) {
-            imageStep = stepInFitUnits;
-            // The window is where it will stay, so the limits have to be judged again
-            if (imageStep >= MAX_ZOOM_SCALE || imageStep <= MIN_ZOOM_SCALE)
+            // The window kept the size it had, so the image is moved from the scale it is already
+            // at instead of from the fit the resize never established
+            imageStep = stepInFitUnits / currentScale;
+            // The window is where it will stay, so the limit has to be judged again
+            if (stepInFitUnits >= MAX_ZOOM_SCALE)
                 return;
         }
     }
@@ -862,11 +864,12 @@ void QVGraphicsView::presentImage(qreal scaleToKeep)
         applyZoomRelativeToFit(scaleToKeep);
 }
 
-// Whether the zoom the last session ended at belongs to the image now loaded: an empty record has
-// nothing to give back, and a zoom only means the same thing on an image framed the same way
+// Whether the last session ended at a zoom that belongs to the image now loaded: an empty record
+// has nothing to give back, a zoom only means the same thing on an image framed the same way, and
+// one at the fit leaves the window nothing of its own to keep
 bool QVGraphicsView::hasSessionZoomForCurrentImage() const
 {
-    if (!sessionZoomPending)
+    if (!sessionZoomPending || !sessionZoomWindowSize.isValid())
         return false;
 
     // The actual size is the same on an image of any shape
@@ -874,7 +877,8 @@ bool QVGraphicsView::hasSessionZoomForCurrentImage() const
         return true;
 
     const QSize imageSize = imageSizeForZoomRecord(getCurrentFileDetails());
-    return parseZoomRecord(sessionZoomRecord, imageSize).zoom > 0;
+    const qreal zoom = parseZoomRecord(sessionZoomRecord, imageSize).zoom;
+    return zoom > 0 && qAbs(zoom - 1.0) > FIT_EPSILON;
 }
 
 void QVGraphicsView::fitWindowToImage()
@@ -907,10 +911,15 @@ void QVGraphicsView::fitWindowToImage()
 }
 
 // Keeps the window at the size the zoom was shown in instead of giving it the image's size, and
-// records the size the image was given as the one zooming back out comes back to
+// records the size the window would give the image as the one zooming back out comes back to
 void QVGraphicsView::keepWindowSizeForSessionZoom()
 {
     if (!getCurrentFileDetails().isPixmapLoaded)
+        return;
+
+    // Taking the session's size is still a resize of the window, which the settings can forbid
+    if (qvGetSettingInt(SettingsManager::Setting::WindowResizeMode)
+        == SettingsManager::WindowResizeNever)
         return;
 
     justLaunchedWithImage = false;
@@ -1136,16 +1145,28 @@ void QVGraphicsView::restoreZoom(const QString &zoomRecord, bool originalSizeMod
     // something measured against the fit
     const qreal zoomValue = parsed.relativeToFit ? parsed.zoom : parsed.zoom / fitScale;
 
+    // The record comes from the settings, so a zoom the screen has no room for is capped instead
+    // of coming back cut off
+    const qreal cappedZoom = qMin(zoomValue, maximumScaleOnScreen() / fitScale);
+
     // The window already has the size the zoom was shown in, so the zoom goes on the image alone
     // instead of growing the window the way zooming does
-    applyScale(zoomValue);
+    applyScale(cappedZoom);
 }
 
 // Writes the zoom this session ends at, so the next one can start where this one left off
 void QVGraphicsView::saveSessionZoom()
 {
-    if (!getCurrentFileDetails().isPixmapLoaded
-        || !qvGetSettingBool(SettingsManager::Setting::RememberZoom))
+    // A record the settings no longer ask for would only come back if they asked again later
+    if (!qvGetSettingBool(SettingsManager::Setting::RememberZoom)) {
+        QSettings settings;
+        settings.remove("lastzoom");
+        settings.remove("lastzoomactualsize");
+        settings.remove("lastzoomwindowsize");
+        return;
+    }
+
+    if (!getCurrentFileDetails().isPixmapLoaded)
         return;
 
     // Zooming grows the window, so the size the image is shown in is part of the zoom. A window that

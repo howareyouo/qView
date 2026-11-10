@@ -138,12 +138,13 @@ private:
     // Reads the zoom the last session ended at, if the settings ask for it to come back
     void restoreSessionZoom();
 
-    // Whether the zoom the last session ended at belongs to the image now loaded, which is what
+    // Whether the last session ended at a zoom that belongs to the image now loaded, which is what
     // lets the window keep the size that zoom was shown in
     bool hasSessionZoomForCurrentImage() const;
 
     // Keeps the window at the size the zoom was shown in instead of giving it the image's size,
-    // and records the size the image was given as the one zooming back out comes back to
+    // and records the size the window would give the image as the one zooming back out comes back
+    // to
     void keepWindowSizeForSessionZoom();
 
     // The size the window would be given to fit the current image, which is where zooming back out
