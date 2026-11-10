@@ -9,6 +9,8 @@
 #include <QTimer>
 #include <QFileInfo>
 
+class MainWindow;
+
 class QVGraphicsView : public QGraphicsView
 {
     Q_OBJECT
@@ -40,9 +42,10 @@ public:
     // Going back to the fit means shrinking the window back to the size it grew from
     void returnToFit();
 
-    // Shows the image that was just loaded: refits it, gives the window the image's size when the
-    // settings call for that, and puts scaleToKeep back on top. A zoom the last session ended at
-    // goes on the first image presented this way. Leaving scaleToKeep at zero shows the fit.
+    // Shows the image that was just loaded: refits it, gives the window the size its settings or
+    // its zoom call for, and puts scaleToKeep back on top. A zoom the last session ended at goes on
+    // the first image presented this way, together with the window it was shown in. Leaving
+    // scaleToKeep at zero shows the fit.
     void presentImage(qreal scaleToKeep = 0);
 
     // Sizes the window to the image when the settings call for it, and records the size the image
@@ -129,11 +132,23 @@ private:
     QString getZoomRecord() const;
 
     // Puts the zoom a previous session ended at back on an image that has just been loaded. Has to
-    // run after the window has been given the new image's size, since that refits the image.
+    // run after the window has been given its size, since that refits the image.
     void restoreZoom(const QString &zoomRecord, bool originalSizeMode);
 
     // Reads the zoom the last session ended at, if the settings ask for it to come back
     void restoreSessionZoom();
+
+    // Whether the zoom the last session ended at belongs to the image now loaded, which is what
+    // lets the window keep the size that zoom was shown in
+    bool hasSessionZoomForCurrentImage() const;
+
+    // Keeps the window at the size the zoom was shown in instead of giving it the image's size,
+    // and records the size the image was given as the one zooming back out comes back to
+    void keepWindowSizeForSessionZoom();
+
+    // The size the window would be given to fit the current image, which is where zooming back out
+    // comes back to
+    QSize fittedWindowSize(MainWindow &mainWindow) const;
 
     qreal maximumScaleOnScreen() const;
 
@@ -215,6 +230,9 @@ private:
     // Zoom the last session ended at, put back on the first image this view presents
     bool sessionZoomPending = false;
     QString sessionZoomRecord;
+
+    // Size the window the zoom was shown in had, so the next session can give it back
+    QSize sessionZoomWindowSize;
     bool sessionZoomOriginalSize = false;
 
     QTransform absoluteTransform;

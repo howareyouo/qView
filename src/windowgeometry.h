@@ -18,9 +18,9 @@ QSize maximumWindowSize(const QWidget &window);
 // Resizes the window around its own center, keeping it inside its screen
 void resizeKeepingCenter(QWidget &window, const QSize &targetSize);
 
-// Resizes the window to fit the image within its screen's bounds, honoring the min/max resize
+// The size the window takes when it is given the image's size, honoring the min/max resize
 // percentages from the settings and the platform-provided minimum image size (used on Windows)
-void resizeToImage(MainWindow &window, const QSize &imageSize, const QSize &minimumImageSize);
+QSize fittedWindowSize(MainWindow &window, const QSize &imageSize, const QSize &minimumImageSize);
 } // namespace WindowGeometry
 
 #endif // WINDOWGEOMETRY_H

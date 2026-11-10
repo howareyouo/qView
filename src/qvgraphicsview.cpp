@@ -782,6 +782,42 @@ static QSize imageSizeForZoomRecord(const QVImageCore::FileDetails &fileDetails)
                                                 : fileDetails.fullPixmapSize;
 }
 
+// The zoom a session record names, as far as it belongs to the image now presented
+struct ZoomRecord
+{
+    // How far past the fit scale the image was zoomed, or zero when the record belongs to another
+    // image
+    qreal zoom = 0;
+    // Whether the zoom is a multiple of the fit scale, which a record from before the shape was
+    // saved does not hold
+    bool relativeToFit = false;
+};
+
+// Reads the record getZoomRecord() writes: the shape of the image it belongs to and how far past
+// the fit it was zoomed, or the absolute scale alone in a record from before the shape was saved
+static ZoomRecord parseZoomRecord(const QString &record, const QSize &imageSize)
+{
+    ZoomRecord parsed;
+
+    const QStringList parts = record.split(u',');
+    const QString zoomPart = parts.last().trimmed();
+    parsed.relativeToFit = zoomPart.endsWith(u'x', Qt::CaseInsensitive);
+    parsed.zoom = (parsed.relativeToFit ? zoomPart.chopped(1) : zoomPart).trimmed().toDouble();
+    if (parsed.zoom <= 0)
+        return {};
+
+    // The zoom only means the same thing on an image framed the same way
+    if (parts.size() == 2) {
+        const QStringList sides = parts.first().split(u':');
+        const QSize recordedSize =
+                sides.size() == 2 ? QSize(sides.at(0).toInt(), sides.at(1).toInt()) : QSize();
+        if (!hasSameShape(recordedSize, imageSize))
+            return {};
+    }
+
+    return parsed;
+}
+
 void QVGraphicsView::updateLoadedPixmapItem()
 {
     QV_PROFILE_SCOPE("open: pixmap item update");
@@ -804,11 +840,18 @@ void QVGraphicsView::updateLoadedPixmapItem()
 }
 
 // Shows the image that has just been loaded: the fit comes first, then the size the window gives
-// the image, and only then does a zoom go back on top, since each of the three refits the image.
+// the image or the zoom, and only then does a zoom go back on top, since each of the three refits
+// the image.
 void QVGraphicsView::presentImage(qreal scaleToKeep)
 {
     resetScale();
-    fitWindowToImage();
+
+    // The zoom a previous session ended at belongs to the window it was shown in, so that window
+    // keeps its size instead of taking the image's
+    if (hasSessionZoomForCurrentImage())
+        keepWindowSizeForSessionZoom();
+    else
+        fitWindowToImage();
 
     if (sessionZoomPending) {
         sessionZoomPending = false;
@@ -817,6 +860,21 @@ void QVGraphicsView::presentImage(qreal scaleToKeep)
 
     if (scaleToKeep > 0)
         applyZoomRelativeToFit(scaleToKeep);
+}
+
+// Whether the zoom the last session ended at belongs to the image now loaded: an empty record has
+// nothing to give back, and a zoom only means the same thing on an image framed the same way
+bool QVGraphicsView::hasSessionZoomForCurrentImage() const
+{
+    if (!sessionZoomPending)
+        return false;
+
+    // The actual size is the same on an image of any shape
+    if (sessionZoomOriginalSize)
+        return true;
+
+    const QSize imageSize = imageSizeForZoomRecord(getCurrentFileDetails());
+    return parseZoomRecord(sessionZoomRecord, imageSize).zoom > 0;
 }
 
 void QVGraphicsView::fitWindowToImage()
@@ -842,8 +900,47 @@ void QVGraphicsView::fitWindowToImage()
         || mainWindow->windowState().testFlag(Qt::WindowFullScreen))
         return;
 
-    // Use the full-resolution size: while a preview decode is on screen the loaded
-    // pixmap is smaller than the actual image
+    WindowGeometry::resizeKeepingCenter(*mainWindow, fittedWindowSize(*mainWindow));
+
+    // The size the image was given is where zooming out stops moving the window
+    rememberFittedWindowSize();
+}
+
+// Keeps the window at the size the zoom was shown in instead of giving it the image's size, and
+// records the size the image was given as the one zooming back out comes back to
+void QVGraphicsView::keepWindowSizeForSessionZoom()
+{
+    if (!getCurrentFileDetails().isPixmapLoaded)
+        return;
+
+    justLaunchedWithImage = false;
+
+    auto *mainWindow = qobject_cast<MainWindow *>(window());
+    if (!mainWindow)
+        return;
+
+    // A maximized or full screen window comes back in that state instead, which is the size the zoom
+    // was shown in
+    if (mainWindow->windowState().testFlag(Qt::WindowMaximized)
+        || mainWindow->windowState().testFlag(Qt::WindowFullScreen))
+        return;
+
+    zoomWindowFittedSize = fittedWindowSize(*mainWindow);
+
+    // The screen the size was recorded on may not be the one this session starts on
+    const QSize targetSize = sessionZoomWindowSize.isValid()
+            ? sessionZoomWindowSize.boundedTo(WindowGeometry::maximumWindowSize(*mainWindow))
+            : mainWindow->size();
+    if (mainWindow->size() == targetSize)
+        return;
+
+    applyZoomWindowResize(targetSize);
+}
+
+QSize QVGraphicsView::fittedWindowSize(MainWindow &mainWindow) const
+{
+    // Use the full-resolution size: while a preview decode is on screen the loaded pixmap is
+    // smaller than the actual image
     const QSize imageSize = getCurrentFileDetails().fullPixmapSize - QSize(4, 4);
 
 #ifdef Q_OS_WIN
@@ -854,10 +951,7 @@ void QVGraphicsView::fitWindowToImage()
     const QSize minimumImageSize;
 #endif
 
-    WindowGeometry::resizeToImage(*mainWindow, imageSize, minimumImageSize);
-
-    // The size the image was given is where zooming out stops moving the window
-    rememberFittedWindowSize();
+    return WindowGeometry::fittedWindowSize(mainWindow, imageSize, minimumImageSize);
 }
 
 void QVGraphicsView::fullPixmapLoaded()
@@ -1015,8 +1109,8 @@ void QVGraphicsView::applyZoomRelativeToFit(qreal scaleFactor)
     applyScale(targetScale / absoluteTransform.m11());
 }
 
-// Puts the zoom a previous session ended at back on an image that has just been loaded. Has to
-// run after the window has been given the new image's size, since that refits the image.
+// Puts the zoom a previous session ended at back on an image that has just been loaded. Has to run
+// after the window has been given the size the zoom was shown in, since that refits the image.
 void QVGraphicsView::restoreZoom(const QString &zoomRecord, bool originalSizeMode)
 {
     if (!getCurrentFileDetails().isPixmapLoaded)
@@ -1028,30 +1122,23 @@ void QVGraphicsView::restoreZoom(const QString &zoomRecord, bool originalSizeMod
     }
 
     // The record holds the shape of the image and the zoom that belonged to it, as getZoomRecord()
-    // writes them. A record from before the shape was saved holds the absolute scale alone, which
-    // the missing "x" tells apart
-    const QStringList parts = zoomRecord.split(u',');
-    const QString zoomPart = parts.last().trimmed();
-    const bool zoomIsRelativeToFit = zoomPart.endsWith(u'x', Qt::CaseInsensitive);
-    const qreal zoomValue =
-            (zoomIsRelativeToFit ? zoomPart.chopped(1) : zoomPart).trimmed().toDouble();
-    if (zoomValue <= 0)
+    // writes them
+    const QSize imageSize = imageSizeForZoomRecord(getCurrentFileDetails());
+    const ZoomRecord parsed = parseZoomRecord(zoomRecord, imageSize);
+    if (parsed.zoom <= 0)
         return;
-
-    // The zoom only means the same thing on an image framed the same way
-    if (parts.size() == 2) {
-        const QStringList sides = parts.first().split(u':');
-        const QSize recordedSize =
-                sides.size() == 2 ? QSize(sides.at(0).toInt(), sides.at(1).toInt()) : QSize();
-        if (!hasSameShape(recordedSize, imageSizeForZoomRecord(getCurrentFileDetails())))
-            return;
-    }
 
     const qreal fitScale = absoluteTransform.m11();
     if (fitScale <= 0)
         return;
 
-    applyZoomRelativeToFit(zoomIsRelativeToFit ? zoomValue : zoomValue / fitScale);
+    // A record from before the shape was saved holds the absolute scale alone, which only means
+    // something measured against the fit
+    const qreal zoomValue = parsed.relativeToFit ? parsed.zoom : parsed.zoom / fitScale;
+
+    // The window already has the size the zoom was shown in, so the zoom goes on the image alone
+    // instead of growing the window the way zooming does
+    applyScale(zoomValue);
 }
 
 // Writes the zoom this session ends at, so the next one can start where this one left off
@@ -1061,9 +1148,17 @@ void QVGraphicsView::saveSessionZoom()
         || !qvGetSettingBool(SettingsManager::Setting::RememberZoom))
         return;
 
+    // Zooming grows the window, so the size the image is shown in is part of the zoom. A window that
+    // is maximized or full screen comes back in that state from its geometry instead.
+    const QWidget *viewWindow = window();
+    const QSize windowSize = viewWindow && !viewWindow->isMaximized() && !viewWindow->isFullScreen()
+            ? viewWindow->size()
+            : QSize();
+
     QSettings settings;
     settings.setValue("lastzoom", getZoomRecord());
     settings.setValue("lastzoomactualsize", isOriginalSize);
+    settings.setValue("lastzoomwindowsize", windowSize);
 }
 
 // Reads the zoom the last session ended at, if the settings ask for it to come back. It goes on the
@@ -1079,6 +1174,7 @@ void QVGraphicsView::restoreSessionZoom()
         return;
 
     sessionZoomOriginalSize = settings.value("lastzoomactualsize", false).toBool();
+    sessionZoomWindowSize = settings.value("lastzoomwindowsize").toSize();
     sessionZoomPending = true;
 }
 

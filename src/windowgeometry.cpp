@@ -82,7 +82,7 @@ void resizeKeepingCenter(QWidget &window, const QSize &targetSize)
     window.setGeometry(QRect(targetFrameRect.topLeft() + frameOffset, targetSize));
 }
 
-void resizeToImage(MainWindow &window, const QSize &imageSize, const QSize &minimumImageSize)
+QSize fittedWindowSize(MainWindow &window, const QSize &imageSize, const QSize &minimumImageSize)
 {
     const auto &settingsManager = qvApp->getSettingsManager();
     const qreal minWindowResizedPercentage =
@@ -118,7 +118,7 @@ void resizeToImage(MainWindow &window, const QSize &imageSize, const QSize &mini
         && fittedImageSize.boundedTo(minimumImageSize) == fittedImageSize)
         fittedImageSize = minimumImageSize;
 
-    resizeKeepingCenter(window, fittedImageSize + extraWidgetsSize);
+    return fittedImageSize + extraWidgetsSize;
 }
 
 } // namespace WindowGeometry

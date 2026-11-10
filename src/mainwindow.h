@@ -143,6 +143,10 @@ private:
     // actions also exist as clones in the virtual menu that holds the window shortcuts.
     void ensureMenuBar();
 
+    // Writes the window's geometry, including a maximized or fullscreen state, so the next session
+    // opens the window the way this one left it
+    void saveWindowGeometry();
+
     Ui::MainWindow *ui;
     QVGraphicsView *graphicsView;
 
