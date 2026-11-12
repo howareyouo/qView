@@ -132,7 +132,8 @@ private:
     QString getZoomRecord() const;
 
     // Puts the zoom a previous session ended at back on an image that has just been loaded. Has to
-    // run after the window has been given its size, since that refits the image.
+    // run after the window has been given the size that zoom was shown in, since that refits the
+    // image.
     void restoreZoom(const QString &zoomRecord, bool originalSizeMode);
 
     // Reads the zoom the last session ended at, if the settings ask for it to come back
@@ -144,7 +145,8 @@ private:
 
     // Keeps the window at the size the zoom was shown in instead of giving it the image's size,
     // and records the size the window would give the image as the one zooming back out comes back
-    // to
+    // to. Only reached for a record hasSessionZoomForCurrentImage() accepted, which is what makes
+    // the size the zoom was shown in valid
     void keepWindowSizeForSessionZoom();
 
     // The size the window would be given to fit the current image, which is where zooming back out

@@ -446,32 +446,31 @@ void QVGraphicsView::zoom(qreal requestedStep, QPoint pos)
             currentScale > 1.0 ? stepInFitUnits <= 1.0 : stepInFitUnits >= 1.0;
 
     QSize windowTargetSize;
-    qreal windowStep = 1.0;
+    bool windowMoves = false;
+    // What the image is scaled by from where the step leaves it: the fit when a resize refitted the
+    // image, the scale it is already at when the window kept the size it had
     qreal imageStep = requestedStep;
 
     if ((atFit || stepReachesFit) && qAbs(stepInFitUnits - 1.0) > FIT_EPSILON) {
-        windowStep = stepInFitUnits > 1.0
+        const qreal windowStep = stepInFitUnits > 1.0
                 ? planGrowWindowForZoom(stepInFitUnits, windowTargetSize)
                 : planShrinkWindowForZoom(stepInFitUnits, windowTargetSize);
 
-        if (qAbs(windowStep - 1.0) > FIT_EPSILON) {
+        windowMoves = qAbs(windowStep - 1.0) > FIT_EPSILON;
+        if (windowMoves) {
             // The resize refits the image, so it takes only what the window could not, and
             // never less than the fit scale it lands on
             imageStep = qMax(stepInFitUnits / windowStep, 1.0);
-        } else {
-            windowStep = 1.0;
+        } else if (!atFit) {
             // The window stays as it is, so the image goes back to the fit scale at most
-            if (!atFit)
-                imageStep = 1.0 / currentScale;
+            imageStep = 1.0 / currentScale;
         }
     }
 
-    const bool windowMoves = qAbs(windowStep - 1.0) > FIT_EPSILON;
-
     // Don't zoom too far, dude. Judged before the window is touched, so a step that gets
     // rejected leaves the window where it was instead of resized for an image that did not zoom
-    const qreal resultingScale = windowMoves ? imageStep : currentScale * imageStep;
-    if (resultingScale >= MAX_ZOOM_SCALE || resultingScale <= MIN_ZOOM_SCALE)
+    const qreal resultingFitScale = windowMoves ? imageStep : currentScale * imageStep;
+    if (resultingFitScale >= MAX_ZOOM_SCALE || resultingFitScale <= MIN_ZOOM_SCALE)
         return;
 
     if (windowMoves) {
@@ -936,10 +935,10 @@ void QVGraphicsView::keepWindowSizeForSessionZoom()
 
     zoomWindowFittedSize = fittedWindowSize(*mainWindow);
 
-    // The screen the size was recorded on may not be the one this session starts on
-    const QSize targetSize = sessionZoomWindowSize.isValid()
-            ? sessionZoomWindowSize.boundedTo(WindowGeometry::maximumWindowSize(*mainWindow))
-            : mainWindow->size();
+    // The record is one hasSessionZoomForCurrentImage() accepted, so it holds the size the zoom was
+    // shown in; the screen this session starts on may still be a smaller one
+    const QSize targetSize =
+            sessionZoomWindowSize.boundedTo(WindowGeometry::maximumWindowSize(*mainWindow));
     if (mainWindow->size() == targetSize)
         return;
 
