@@ -865,7 +865,8 @@ void QVGraphicsView::presentImage(qreal scaleToKeep)
 
 // Whether the last session ended at a zoom that belongs to the image now loaded: an empty record
 // has nothing to give back, a zoom only means the same thing on an image framed the same way, and
-// one at the fit leaves the window nothing of its own to keep
+// one at the fit leaves the window nothing of its own to keep unless the window itself grew to take
+// it
 bool QVGraphicsView::hasSessionZoomForCurrentImage() const
 {
     if (!sessionZoomPending || !sessionZoomWindowSize.isValid())
@@ -877,7 +878,23 @@ bool QVGraphicsView::hasSessionZoomForCurrentImage() const
 
     const QSize imageSize = imageSizeForZoomRecord(getCurrentFileDetails());
     const qreal zoom = parseZoomRecord(sessionZoomRecord, imageSize).zoom;
-    return zoom > 0 && qAbs(zoom - 1.0) > FIT_EPSILON;
+    if (zoom <= 0)
+        return false;
+
+    if (qAbs(zoom - 1.0) > FIT_EPSILON)
+        return true;
+
+    // Zooming hands the step to the window before the image takes any of it, so a session that
+    // ended in one such step records the fit and keeps the zoom in the size the window grew to.
+    // That window is larger than the one the fit gives the image, which is how the two tell apart
+    // a zoom taken by the window from a session that ended without one
+    auto *mainWindow = qobject_cast<MainWindow *>(window());
+    if (!mainWindow)
+        return false;
+
+    const QSize fittedSize = fittedWindowSize(*mainWindow);
+    return sessionZoomWindowSize.width() > fittedSize.width()
+            || sessionZoomWindowSize.height() > fittedSize.height();
 }
 
 void QVGraphicsView::fitWindowToImage()

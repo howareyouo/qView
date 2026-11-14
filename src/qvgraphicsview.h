@@ -140,7 +140,8 @@ private:
     void restoreSessionZoom();
 
     // Whether the last session ended at a zoom that belongs to the image now loaded, which is what
-    // lets the window keep the size that zoom was shown in
+    // lets the window keep the size that zoom was shown in. A zoom at the fit scale counts when the
+    // window grew to take it, since that growth is the zoom
     bool hasSessionZoomForCurrentImage() const;
 
     // Keeps the window at the size the zoom was shown in instead of giving it the image's size,
