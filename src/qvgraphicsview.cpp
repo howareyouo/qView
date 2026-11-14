@@ -952,6 +952,10 @@ void QVGraphicsView::keepWindowSizeForSessionZoom()
 
     zoomWindowFittedSize = fittedWindowSize(*mainWindow);
 
+    // The zoom the session left in the window grew it from the size the fit gives the image, which
+    // is where going back to the fit returns it to
+    preZoomWindowSize = zoomWindowFittedSize;
+
     // The record is one hasSessionZoomForCurrentImage() accepted, so it holds the size the zoom was
     // shown in; the screen this session starts on may still be a smaller one
     const QSize targetSize =
